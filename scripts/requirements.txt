@@ -1,0 +1,9 @@
+numpy
+pandas
+matplotlib
+scikit-learn
+bert-score
+transformers
+torch
+sentence-transformers
+onnx

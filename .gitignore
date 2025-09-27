@@ -1,0 +1,42 @@
+# Build files
+build/
+boolean_retrieval
+*.o
+*.so
+*.a
+
+# Results and logs
+results/*.txt
+results/*.json
+results/*.png
+*.log
+
+# Dataset files (too large for git)
+docs/trec6*
+docs/*.gz
+docs/*.tar
+docs/*
+!docs/sample_documents.txt
+!docs/sample_queries.txt
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Model files (too large)
+models/*.bin
+models/*.pt
+models/*.onnx
+.venv/
+
