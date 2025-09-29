@@ -32,6 +32,7 @@ class ParallelIndexer {
 
         std::vector<Shard> shards_;
         mutable PerformanceMonitor perf_monitor_;
+        uint16_t num_docs_indexed_; 
 
     };
 #endif

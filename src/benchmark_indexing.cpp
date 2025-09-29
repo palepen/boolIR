@@ -15,8 +15,8 @@ DocumentCollection create_sample_documents(int num_docs) {
 }
 
 int main() {
-    const int num_docs = 50000;
-    const uint16_t num_shards = 32;
+    const int num_docs = 1e7;
+    const uint16_t num_shards = 64;
     std::cout << "Preparing " << num_docs << " sample documents for benchmark...\n\n";
     DocumentCollection documents = create_sample_documents(num_docs);
 
@@ -32,7 +32,8 @@ int main() {
     IndexingMetrics par_metrics = par_indexer.get_performance_metrics();
 
     // --- Print Final Comparison Report ---
-    std::cout << "\n\n--- Indexing Benchmark Results (" << num_docs << " documents) ---\n";
+    
+    std::cout << "\n\n--- Indexing Benchmark Results (" << num_docs << " documents) ---\n" << std::endl;
     std::cout << std::fixed << std::setprecision(2);
     std::cout << "------------------------------------------------------------\n";
     std::cout << std::left << std::setw(25) << "Indexer" << std::setw(20) << "Time (ms)" << std::setw(25) << "Throughput (docs/s)" << "\n";
@@ -42,7 +43,7 @@ int main() {
               << std::setw(20) << seq_metrics.indexing_time_ms 
               << std::setw(25) << seq_metrics.throughput_docs_per_sec << "\n";
 
-    std::cout << std::left << std::setw(25) << "Parallel (" << num_shards << " shards)" 
+    std::cout << std::left << "Parallel (" << num_shards << " shards)" 
               << std::setw(20) << par_metrics.indexing_time_ms 
               << std::setw(25) << par_metrics.throughput_docs_per_sec << "\n";
     
