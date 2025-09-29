@@ -1,9 +1,15 @@
-numpy
-pandas
-matplotlib
-scikit-learn
-bert-score
-transformers
-torch
-sentence-transformers
-onnx
+# scripts/requirements.txt
+# Required for model export and evaluation
+
+# Model export (to ONNX)
+sentence-transformers>=2.2.0
+torch>=1.13.0
+
+# GPU inference (CUDA 11.8 — compatible with GTX 1650)
+onnxruntime-gpu>=1.16.0,<1.17.0
+
+# Evaluation & plotting
+numpy>=1.21.0
+pandas>=1.3.0
+matplotlib>=3.5.0
+tqdm>=4.60.0
