@@ -1,36 +1,49 @@
 # --- Compiler and Flags ---
 CXX = /opt/opencilk/bin/clang++
-CXXFLAGS = -std=c++17 -fopencilk -O3 -pthread -Iinclude
-LDFLAGS = -L/opt/opencilk/lib
+# MODIFIED: Point to the standard system include path for ONNX Runtime
+CXXFLAGS = -std=c++17 -fopencilk -O3 -pthread -Iinclude -I/opt/onnxruntime/include
+# MODIFIED: Point to the standard system library path for ONNX Runtime
+LDFLAGS = -L/opt/opencilk/lib -L/opt/onnxruntime/lib -lonnxruntime \
+          -Wl,-rpath,/opt/opencilk/lib,-rpath,/opt/onnxruntime/lib
+
+# --- Python Environment ---
+# MODIFIED: Use the system's python3 directly
+PYTHON = python3
 
 # --- Executable Targets ---
-APP_TARGET = indexing_benchmark
-TEST_TARGET = test_postings
+RERANKING_TARGET = reranking_benchmark
 
 # --- Source Files ---
-APP_SRCS = src/benchmark_indexing.cpp src/indexing/parallel_indexer.cpp src/indexing/performance_monitor.cpp src/indexing/posting_list.cpp src/indexing/sequential_indexer.cpp
-TEST_SRCS = tests/test_posting_list.cpp src/indexing/posting_list.cpp
+# All necessary source files for the reranking benchmark
+RERANKING_SRCS = src/benchmark_reranking.cpp \
+                 src/reranking/neural_reranker.cpp \
+                 src/indexing/performance_monitor.cpp
 
 # --- Build Rules ---
-.PHONY: all test clean
+# MODIFIED: Removed 'setup' from .PHONY
+.PHONY: all clean reranking model
 
-all: $(APP_TARGET)
+# Default action: build the Phase 3 executable
+all: $(RERANKING_TARGET)
 
-$(APP_TARGET): $(APP_SRCS)
+reranking: $(RERANKING_TARGET)
+
+# REMOVED: The entire 'setup' rule for the virtual environment is no longer needed.
+
+# Rule to export the BERT model to ONNX format
+# MODIFIED: Removed the 'setup' dependency
+model:
+	@echo "Exporting BERT model to ONNX format..."
+	$(PYTHON) scripts/export_model.py
+
+# Rule to build the Phase 3 reranking benchmark
+$(RERANKING_TARGET): $(RERANKING_SRCS)
 	@echo "Building application: $@"
 	$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
 	@echo "Build complete."
 
-$(TEST_TARGET): $(TEST_SRCS)
-	@echo "Building test: $@"
-	$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
-	@echo "Test build complete."
-
-test: $(TEST_TARGET)
-	@echo "--- Running Unit Test ---"
-	./$(TEST_TARGET)
-	@echo "-----------------------"
-
+# Rule to clean all generated files
 clean:
 	@echo "Cleaning up..."
-	rm -f $(APP_TARGET) $(TEST_TARGET)
+	rm -f $(RERANKING_TARGET)
+	rm -rf models

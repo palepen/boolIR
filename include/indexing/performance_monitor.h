@@ -31,6 +31,6 @@ class PerformanceMonitor {
 
         std::unordered_map<std::string, TimingData> timings_;
         mutable std::mutex mtx_;        
-        
+        size_t num_docs_indexed_ = 0;  
     };
 #endif

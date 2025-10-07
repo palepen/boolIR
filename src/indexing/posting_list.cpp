@@ -1,7 +1,7 @@
 #include "indexing/posting_list.h"
 #include <algorithm>
 
-void PostingList::add_document(int doc_id) {
+void PostingList::add_document(u_int doc_id) {
     // A simple push_back is sufficient for this implementation.
     // In a real system, you might ensure IDs are sorted or unique.
     auto it = std::lower_bound(postings_.begin(), postings_.end(), doc_id);
@@ -13,6 +13,6 @@ void PostingList::add_document(int doc_id) {
     }
 }
 
-const std::vector<int>& PostingList::get_postings() const {
+const std::vector<u_int>& PostingList::get_postings() const {
     return postings_;
 }

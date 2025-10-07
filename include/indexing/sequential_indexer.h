@@ -18,6 +18,8 @@ public:
 private:
     std::unordered_map<std::string, PostingList> inverted_index_;
     mutable PerformanceMonitor perf_monitor_;
+    size_t num_docs_indexed_ = 0;
+
 };
 
 #endif

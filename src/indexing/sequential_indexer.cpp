@@ -20,6 +20,9 @@ static std::vector<std::string> tokenize(const std::string& text) {
 void SequentialIndexer::build_index(const DocumentCollection& documents) {
     std::cout << "Starting sequential indexing for " << documents.size() << " documents...\n";
     perf_monitor_.start_timer("total_indexing_time");
+    
+    num_docs_indexed_ =  documents.size(); 
+
 
     for (const auto& doc : documents) {
         auto tokens = tokenize(doc.content);
@@ -36,6 +39,6 @@ IndexingMetrics SequentialIndexer::get_performance_metrics() const {
     IndexingMetrics metrics;
     double time_ms = perf_monitor_.get_duration_ms("total_indexing_time");
     metrics.indexing_time_ms = time_ms;
-    metrics.throughput_docs_per_sec = (time_ms > 0) ? (1000.0 * 50000 / time_ms) : 0;
+    metrics.throughput_docs_per_sec = (time_ms > 0) ? (1000.0 * num_docs_indexed_ / time_ms) : 0;
     return metrics;
 }

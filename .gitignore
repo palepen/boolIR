@@ -40,3 +40,5 @@ models/*.pt
 models/*.onnx
 .venv/
 
+vendor/*.tgz
+vendor/*.tar.gz
