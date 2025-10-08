@@ -3,6 +3,7 @@
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 // Helper function for cosine similarity
 float cosine_similarity(const std::vector<float> &v1, const std::vector<float> &v2)
@@ -20,6 +21,30 @@ float cosine_similarity(const std::vector<float> &v1, const std::vector<float> &
         return 0.0f;
     return dot_product / (std::sqrt(norm1) * std::sqrt(norm2));
 }
+
+// --- Helper function to simulate tokenization ---
+// A real implementation would require a full WordPiece tokenizer library.
+// This function creates a unique but deterministic placeholder tensor based on the text.
+void simulate_tokenization(const std::string& text, int64_t seq_len, std::vector<int64_t>& out_input_ids, std::vector<int64_t>& out_attention_mask) {
+    out_input_ids.assign(seq_len, 0); // Padding token
+    out_attention_mask.assign(seq_len, 0);
+
+    // Start with CLS token
+    out_input_ids[0] = 101;
+    out_attention_mask[0] = 1;
+    
+    // Simulate token IDs based on characters in the text
+    size_t tokens_to_generate = std::min((size_t)seq_len - 2, text.length());
+    for(size_t i = 0; i < tokens_to_generate; ++i) {
+        out_input_ids[i + 1] = 1000 + (static_cast<int64_t>(text[i]) % 29000); // Simple hash to a vocab ID
+        out_attention_mask[i + 1] = 1;
+    }
+
+    // End with SEP token
+    out_input_ids[tokens_to_generate + 1] = 102;
+    out_attention_mask[tokens_to_generate + 1] = 1;
+}
+
 
 // --- SequentialNeuralReranker Implementation ---
 
@@ -51,8 +76,9 @@ std::vector<ScoredDocument> SequentialNeuralReranker::rerank(
 std::vector<float> SequentialNeuralReranker::compute_embedding(const std::string &text)
 {
     const int64_t seq_len = 128;
-    std::vector<int64_t> input_ids(seq_len, 101);
-    std::vector<int64_t> attention_mask(seq_len, 1);
+    std::vector<int64_t> input_ids;
+    std::vector<int64_t> attention_mask;
+    simulate_tokenization(text, seq_len, input_ids, attention_mask);
 
     const int64_t input_shape[] = {1, seq_len};
     auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -70,22 +96,23 @@ std::vector<float> SequentialNeuralReranker::compute_embedding(const std::string
     float *floatarr = output_tensors[0].GetTensorMutableData<float>();
     auto shape_info = output_tensors[0].GetTensorTypeAndShapeInfo();
     
-    // Get the actual shape: [batch_size, seq_len, hidden_size]
     auto shape = shape_info.GetShape();
-    size_t hidden_size = shape[2];  // The embedding dimension (typically 384 for MiniLM)
+    size_t hidden_size = shape[2]; 
 
-    // Mean pooling: average across sequence length
+    // Mean pooling
     std::vector<float> mean_pooled(hidden_size, 0.0f);
-    for (size_t j = 0; j < seq_len; ++j)
-    {
-        for (size_t k = 0; k < hidden_size; ++k)
-        {
-            mean_pooled[k] += floatarr[j * hidden_size + k];
+    for (size_t j = 0; j < seq_len; ++j) {
+        if (attention_mask[j] == 1) { // Only pool valid tokens
+            for (size_t k = 0; k < hidden_size; ++k) {
+                mean_pooled[k] += floatarr[j * hidden_size + k];
+            }
         }
     }
-    for (size_t k = 0; k < hidden_size; ++k)
-    {
-        mean_pooled[k] /= seq_len;
+    size_t num_valid_tokens = std::accumulate(attention_mask.begin(), attention_mask.end(), 0);
+    if (num_valid_tokens > 0) {
+        for (size_t k = 0; k < hidden_size; ++k) {
+            mean_pooled[k] /= num_valid_tokens;
+        }
     }
     
     return mean_pooled;
@@ -140,40 +167,61 @@ std::vector<float> GpuNeuralReranker::compute_embedding(const std::string &text)
 
 std::vector<std::vector<float>> GpuNeuralReranker::compute_batch_embeddings(const std::vector<std::string> &texts)
 {
-    size_t batch_size = texts.size();
+    size_t current_batch_size = texts.size();
     const int64_t seq_len = 128;
-    std::vector<int64_t> input_ids(batch_size * seq_len, 101);
-    std::vector<int64_t> attention_mask(batch_size * seq_len, 1);
-    int64_t input_shape[] = {(int64_t)batch_size, seq_len};
+    
+    std::vector<int64_t> all_input_ids;
+    std::vector<int64_t> all_attention_masks;
+    all_input_ids.reserve(current_batch_size * seq_len);
+    all_attention_masks.reserve(current_batch_size * seq_len);
+
+    for(const auto& text : texts) {
+        std::vector<int64_t> input_ids;
+        std::vector<int64_t> attention_mask;
+        simulate_tokenization(text, seq_len, input_ids, attention_mask);
+        all_input_ids.insert(all_input_ids.end(), input_ids.begin(), input_ids.end());
+        all_attention_masks.insert(all_attention_masks.end(), attention_mask.begin(), attention_mask.end());
+    }
+
+    int64_t input_shape[] = {(int64_t)current_batch_size, seq_len};
     auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     std::vector<Ort::Value> input_tensors;
     input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(
-        memory_info, input_ids.data(), input_ids.size(), input_shape, 2));
+        memory_info, all_input_ids.data(), all_input_ids.size(), input_shape, 2));
     input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(
-        memory_info, attention_mask.data(), attention_mask.size(), input_shape, 2));
+        memory_info, all_attention_masks.data(), all_attention_masks.size(), input_shape, 2));
+
     auto output_tensors = session_.Run(
         Ort::RunOptions{nullptr}, input_names_.data(), input_tensors.data(), input_tensors.size(), output_names_.data(), 1);
+    
     float *floatarr = output_tensors[0].GetTensorMutableData<float>();
     auto shape_info = output_tensors[0].GetTensorTypeAndShapeInfo();
     
-    // Get the actual shape: [batch_size, seq_len, hidden_size]
     auto shape = shape_info.GetShape();
     size_t hidden_size = shape[2];
     
     std::vector<std::vector<float>> results;
-    for (size_t i = 0; i < batch_size; ++i)
+    results.reserve(current_batch_size);
+
+    for (size_t i = 0; i < current_batch_size; ++i)
     {
         std::vector<float> mean_pooled(hidden_size, 0.0f);
+        size_t num_valid_tokens = 0;
         for (size_t j = 0; j < seq_len; ++j)
         {
-            for (size_t k = 0; k < hidden_size; ++k)
-            {
-                mean_pooled[k] += floatarr[(i * seq_len + j) * hidden_size + k];
+            size_t batch_offset = i * seq_len;
+            if (all_attention_masks[batch_offset + j] == 1) {
+                num_valid_tokens++;
+                 for (size_t k = 0; k < hidden_size; ++k)
+                {
+                    mean_pooled[k] += floatarr[(batch_offset + j) * hidden_size + k];
+                }
             }
         }
-        for (size_t k = 0; k < hidden_size; ++k)
-        {
-            mean_pooled[k] /= seq_len;
+        if (num_valid_tokens > 0) {
+            for (size_t k = 0; k < hidden_size; ++k) {
+                mean_pooled[k] /= num_valid_tokens;
+            }
         }
         results.push_back(mean_pooled);
     }

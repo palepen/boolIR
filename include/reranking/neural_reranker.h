@@ -9,7 +9,7 @@
 
 struct ScoredDocument
 {
-    int id;
+    unsigned int id;
     float score;
     bool operator<(const ScoredDocument &other) const { return score > other.score; }
 };
