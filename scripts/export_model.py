@@ -1,25 +1,31 @@
 import torch
-from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import os
 import argparse
 
 def export_to_onnx(model_name: str, output_path: str):
     """
-    Exports a SentenceTransformer model to ONNX format.
+    Exports a cross-encoder model to ONNX format for reranking.
     """
-    print(f"Loading pre-trained model: {model_name}...")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Loading pre-trained cross-encoder model: {model_name}...")
+    device = torch.device("cpu")
     print(f"Using device: {device}")
 
-    model = SentenceTransformer(model_name).to(device)
-    core_model = model[0].auto_model
+    # Use AutoModelForSequenceClassification for cross-encoders
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name).to(device)
+    model.eval()
 
-    dummy_text = "This is a sample sentence."
-    inputs = model.tokenizer(
-        dummy_text,
+    # Create dummy inputs for a query-document pair
+    query = "What is the incubation period of COVID-19?"
+    document = "The incubation period for COVID-19 is typically 5-6 days but can be up to 14 days."
+    
+    inputs = tokenizer(
+        query,
+        document,
         padding='max_length',
         truncation=True,
-        max_length=128,
+        max_length=512,  # Cross-encoders can handle longer sequences
         return_tensors="pt"
     )
     
@@ -30,18 +36,19 @@ def export_to_onnx(model_name: str, output_path: str):
     
     print(f"Exporting model to ONNX at: {output_path}")
 
+    # The output is now 'logits', not 'last_hidden_state'
     torch.onnx.export(
-        core_model,
+        model,
         (input_ids, attention_mask),
         output_path,
         input_names=['input_ids', 'attention_mask'],
-        output_names=['last_hidden_state'],
+        output_names=['logits'], # CRITICAL CHANGE
         dynamic_axes={
-            'input_ids': {0: 'batch_size', 1: 'sequence_length'},
-            'attention_mask': {0: 'batch_size', 1: 'sequence_length'},
-            'sentence_embedding': {0: 'batch_size'}
+            'input_ids': {0: 'batch_size'},
+            'attention_mask': {0: 'batch_size'},
+            'logits': {0: 'batch_size'}
         },
-        opset_version=14,  # <-- FIX: Changed from 13 to 14
+        opset_version=14,
         export_params=True
     )
     print("Model exported successfully.")
@@ -49,13 +56,13 @@ def export_to_onnx(model_name: str, output_path: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Export a SentenceTransformer model to ONNX."
+        description="Export a cross-encoder model to ONNX for reranking."
     )
     parser.add_argument(
         "--model",
         type=str,
-        default="sentence-transformers/all-MiniLM-L6-v2",
-        help="The name of the SentenceTransformer model to export."
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2", # Use a proper cross-encoder
+        help="The name of the cross-encoder model to export."
     )
     parser.add_argument(
         "--output",
