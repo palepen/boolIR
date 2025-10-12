@@ -61,7 +61,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        default="cross-encoder/ms-marco-MiniLM-L-6-v2", # Use a proper cross-encoder
+        default="allenai/scibert_scivocab_uncased", # Use a proper cross-encoder
         help="The name of the cross-encoder model to export."
     )
     parser.add_argument(

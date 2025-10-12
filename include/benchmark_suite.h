@@ -4,31 +4,27 @@
 #include "evaluation/evaluator.h"
 #include "data_loader.h"
 #include "common_types.h"
+#include "reranking/parallel_gpu_reranking.h" // For QueryMetrics
 #include <vector>
 #include <string>
 #include <unordered_map>
-
+#include <queue>
 // Forward declarations
 class HighPerformanceIRSystem;
-class BatchedGpuReranker;
-
-// Import QueryMetrics from parallel_gpu_reranking.h
-struct QueryMetrics;
 
 struct BenchmarkConfig {
-    size_t num_workers;
+    size_t num_workers; // Note: For reranking, this is conceptual. For boolean, it's not used.
     bool use_reranking;
-    bool parallel_queries;
     std::string label;
 };
 
 struct BenchmarkResults {
     BenchmarkConfig config;
     double total_time_ms;
-    double indexing_time_ms;
     double query_processing_time_ms;
     double throughput_queries_per_sec;
     EvaluationResults effectiveness;
+    // Latency stats
     double avg_retrieval_time_ms;
     double avg_reranking_time_ms;
     double median_retrieval_time_ms;
@@ -36,32 +32,42 @@ struct BenchmarkResults {
     std::vector<QueryMetrics> query_metrics;
 };
 
-class BenchmarkSuite {
-private:
-    const DocumentCollection& documents_;
-    const std::unordered_map<std::string, std::string>& topics_;
-    const Qrels& ground_truth_;
-    const char* model_path_;
-    const char* vocab_path_;
-    
-    void calculate_statistics(BenchmarkResults& results);
-    
-    std::unordered_map<std::string, std::vector<SearchResult>> 
-    process_queries_sequential(
-        HighPerformanceIRSystem& system,
-        bool use_reranking,
-        std::vector<QueryMetrics>& query_metrics
-    );
+struct RerankJob {
+    std::string query_text;
+    std::vector<Document> candidates;
+    std::promise<std::vector<ScoredDocument>> promise;
+};
 
+class GpuRerankService {
+public:
+    GpuRerankService(const std::string& model_path, const std::string& vocab_path);
+    ~GpuRerankService();
+    std::future<std::vector<ScoredDocument>> submit_job(const std::string& query_text, const std::vector<Document>& candidates);
+private:
+    void worker_loop();
+    GpuNeuralReranker reranker_;
+    std::thread worker_thread_;
+    std::queue<RerankJob> job_queue_;
+    std::mutex queue_mutex_;
+    std::condition_variable condition_;
+    bool stop_ = false;
+};
+
+
+class BenchmarkSuite {
 public:
     BenchmarkSuite(
         const DocumentCollection& documents,
         const std::unordered_map<std::string, std::string>& topics,
         const Qrels& ground_truth,
-        const char* model_path,
-        const char* vocab_path
+        const std::string& model_path,
+        const std::string& vocab_path,
+        const std::string& index_path,
+        const std::string& synonym_path
     );
-    
+    void run_full_benchmark();
+private:
+
     BenchmarkResults run_benchmark(const BenchmarkConfig& config);
     
     std::vector<BenchmarkResults> run_scalability_test(
@@ -71,15 +77,17 @@ public:
     
     std::vector<BenchmarkResults> run_comparison_test(size_t num_workers);
     
-    void export_to_csv(
-        const std::vector<BenchmarkResults>& results,
-        const std::string& filename
-    );
+    void calculate_statistics(BenchmarkResults& results);
+    void export_to_csv(const std::vector<BenchmarkResults>& results, const std::string& filename);
     
-    void export_query_metrics_csv(
-        const BenchmarkResults& results,
-        const std::string& filename
-    );
+    // Member variables
+    const DocumentCollection& documents_;
+    const std::unordered_map<std::string, std::string>& topics_;
+    const Qrels& ground_truth_;
+    std::string model_path_;
+    std::string vocab_path_;
+    std::string index_path_;
+    std::string synonym_path_;
 };
 
 #endif

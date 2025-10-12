@@ -1,67 +1,51 @@
 #ifndef SYSTEM_CONTROLLER_H
 #define SYSTEM_CONTROLLER_H
 
-#include "indexing/parallel_indexer.h"
 #include "retrieval/optimized_parallel_retrieval.h"
-#include "reranking/parallel_gpu_reranking.h"
+#include "retrieval/query_expander.h"
+#include "reranking/neural_reranker.h"
+#include "common_types.h"
 #include <memory>
 #include <vector>
 #include <string>
-#include <unordered_map>
-#include <chrono>
 
 /**
- * High-Performance Information Retrieval System
- * 
- * Integrates:
- * 1. Parallel indexing (OpenCilk)
- * 2. Optimized boolean retrieval (fast candidate selection)
- * 3. Neural reranking (BERT-based semantic relevance scoring)
+ * High-Performance IR System
+ * Pure Boolean retrieval with simple heuristic ordering + Neural reranking
  */
 class HighPerformanceIRSystem {
 public:
-    /**
-     * Constructor
-     * @param num_shards Number of index shards for parallel processing
-     * @param model_path Path to ONNX model file
-     * @param vocab_path Path to BERT vocabulary file
-     */
-    HighPerformanceIRSystem(size_t num_shards, const char* model_path, const char* vocab_path);
+    HighPerformanceIRSystem(const std::string& index_path, const std::string& synonym_path);
     
-    /**
-     * Build inverted index from document collection
-     * Also builds document ID mapping for fast lookup
-     * @param documents Collection of documents to index
-     */
-    void build_index(const DocumentCollection& documents);
+    // Search with neural reranking
+    std::vector<SearchResult> search(
+        const std::string& query_str, 
+        GpuNeuralReranker& reranker,
+        const DocumentCollection& documents
+    );
+
+    // Search with Boolean only (+ simple heuristics)
+    std::vector<SearchResult> search(
+        const std::string& query_str,
+        const DocumentCollection& documents
+    );
     
-    /**
-     * Search for documents matching query
-     * @param query_str Query string
-     * @param use_reranking Whether to apply neural reranking (default: true)
-     * @return Ranked list of search results
-     */
-    std::vector<SearchResult> search(const std::string& query_str, bool use_reranking = true);
-    
-    /**
-     * Execute boolean query directly (for benchmarking)
-     * @param query QueryNode tree
-     * @return ResultSet with matching document IDs
-     */
     ResultSet execute_boolean_query(const QueryNode& query);
 
+    std::unique_ptr<QueryNode> expand_query(const std::string& query_str);
+
 private:
-    // Core components
-    ParallelIndexer indexer_;
-    std::unique_ptr<ParallelRetrieval> retriever_;
-    std::unique_ptr<BatchedGpuReranker> reranker_;
+    void ensure_doc_map(const DocumentCollection& documents);
     
-    // Document storage and mapping
-    const DocumentCollection* documents_ptr_ = nullptr;
-    
-    // CRITICAL: Document ID to Document pointer mapping for O(1) lookup
-    // This replaces the inefficient O(n) linear search through all documents
+    // Simple heuristic ordering for Boolean results
+    std::vector<SearchResult> apply_simple_heuristics(
+        const ResultSet& candidates,
+        const DocumentCollection& documents
+    );
+
+    std::unique_ptr<QueryExpander> query_expander_;
+    std::unique_ptr<OptimizedParallelRetrieval> retriever_;
     std::unordered_map<unsigned int, const Document*> doc_id_map_;
 };
 
-#endif 
+#endif

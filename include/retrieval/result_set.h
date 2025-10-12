@@ -5,20 +5,26 @@
 #include <iostream>
 #include <algorithm>
 
+/**
+ * Pure Boolean ResultSet
+ * Contains only document IDs without scores
+ */
 class ResultSet {
-    public:
-        std::vector<u_int> doc_ids;
-        static ResultSet intersect_sets(const ResultSet& a, const ResultSet& b);
-        static ResultSet union_sets(const ResultSet& a, const ResultSet& b);
-        static ResultSet differ_sets(const ResultSet& a, const ResultSet& b);
-        
-        void print() const {
-            for (u_int id : doc_ids) {
-                std:: cout << id << " ";
-            }
-            std::cout << "Total: " << doc_ids.size() << ")" << std::endl;
+public:
+    // Document IDs matching the boolean query (sorted)
+    std::vector<unsigned int> doc_ids;
+    
+    // Static helper methods for boolean operations
+    static ResultSet intersect_sets(const ResultSet& a, const ResultSet& b);
+    static ResultSet union_sets(const ResultSet& a, const ResultSet& b);
+    static ResultSet differ_sets(const ResultSet& a, const ResultSet& b);
+    
+    void print() const {
+        for (size_t i = 0; i < std::min(size_t(10), doc_ids.size()); ++i) {
+            std::cout << doc_ids[i] << " ";
         }
-
+        std::cout << "\n(Total: " << doc_ids.size() << " documents)" << std::endl;
+    }
 };
 
 #endif

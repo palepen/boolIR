@@ -2,35 +2,42 @@
 #define OPTIMIZED_PARALLEL_RETRIEVAL_H
 
 #include "retrieval/result_set.h"
-#include "indexing/posting_list.h"
 #include "retrieval/query.h"
+#include <string>
 #include <unordered_map>
 #include <vector>
-#include <immintrin.h>
-#include <cstdint>
+#include <mutex>
 
-class ParallelRetrieval {
-private:
-    const std::unordered_map<std::string, PostingList>& index_;
-    struct AlignedPostingList {
-        alignas(64) std::vector<uint32_t> doc_ids;
-    };
-    std::unordered_map<std::string, AlignedPostingList> aligned_index_;
+struct DiskLocation {
+    long long offset;
+    size_t size;
+};
 
-    ResultSet execute_node_parallel(const QueryNode& node, int depth);
-    ResultSet combine_results_optimized(QueryOperator op, const ResultSet& left, const ResultSet& right);
-    ResultSet intersect_optimized(const ResultSet& a, const ResultSet& b);
-    ResultSet union_optimized(const ResultSet& a, const ResultSet& b);
-    ResultSet difference_optimized(const ResultSet& a, const ResultSet& b);
-    ResultSet combine_multi_results(QueryOperator op, const std::vector<ResultSet>& results);
-    ResultSet parallel_union_reduce(const std::vector<ResultSet>& results);
-    ResultSet merge_sorted_results(const ResultSet& a, const ResultSet& b);
-    std::vector<uint32_t> simd_intersect(const std::vector<uint32_t>& a, const std::vector<uint32_t>& b);
-    size_t estimate_work_size(const QueryNode& node, const std::unordered_map<std::string, PostingList>& index);
-
+/**
+ * Pure Boolean Retrieval Engine
+ * Returns documents that match Boolean query criteria
+ * without scoring or ranking
+ */
+class OptimizedParallelRetrieval {
 public:
-    ParallelRetrieval(const std::unordered_map<std::string, PostingList>& index);
+    OptimizedParallelRetrieval(const std::string& dictionary_path, const std::string& postings_path);
+
     ResultSet execute_query_optimized(const QueryNode& query);
+
+private:
+    ResultSet execute_node_parallel(const QueryNode& node, 
+                                    std::unordered_map<std::string, ResultSet>& postings_cache);
+    
+    void load_dictionary(const std::string& dictionary_path);
+
+    std::unordered_map<std::string, DiskLocation> dictionary_;
+    std::string postings_path_;
+    std::mutex file_mutex_;
+
+    // Pure Boolean set operations
+    ResultSet intersect_sets(const ResultSet& a, const ResultSet& b);
+    ResultSet union_sets(const ResultSet& a, const ResultSet& b);
+    ResultSet differ_sets(const ResultSet& a, const ResultSet& b);
 };
 
 #endif

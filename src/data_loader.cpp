@@ -1,9 +1,31 @@
 #include "data_loader.h"
+#include "tokenizer/porter_stemmer.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <cctype>
 #include <algorithm>
+
+// Helper function to apply stemming to text
+static std::string apply_stemming_to_text(const std::string& text) {
+    std::stringstream ss(text);
+    std::stringstream result;
+    std::string word;
+    bool first = true;
+    
+    while (ss >> word) {
+        // Remove punctuation
+        word.erase(std::remove_if(word.begin(), word.end(), 
+            [](unsigned char c) { return !std::isalnum(c); }), word.end());
+        
+        if (!word.empty()) {
+            if (!first) result << " ";
+            result << PorterStemmer::stem(word);
+            first = false;
+        }
+    }
+    return result.str();
+}
 
 std::pair<DocumentCollection, DocNameToIdMap> load_trec_documents(const std::string &corpus_dir)
 {
@@ -33,7 +55,6 @@ std::pair<DocumentCollection, DocNameToIdMap> load_trec_documents(const std::str
 
             while (std::getline(ifs, line))
             {
-                // Trim whitespace from line for consistent parsing
                 line.erase(0, line.find_first_not_of(" \t\n\r\f\v"));
                 line.erase(line.find_last_not_of(" \t\n\r\f\v") + 1);
 
@@ -47,13 +68,21 @@ std::pair<DocumentCollection, DocNameToIdMap> load_trec_documents(const std::str
                 {
                     if (in_doc && !current_docno.empty() && !current_content.empty())
                     {
-                        // Convert content to lowercase and trim
+                        // Convert content to lowercase
                         std::transform(current_content.begin(), current_content.end(),
                                        current_content.begin(),
                                        [](unsigned char c)
                                        { return std::tolower(c); });
+                        
+                        // Apply stemming (optional - can be commented out for speed)
+                        // Note: Stemming is already applied during indexing in bsbi_indexer.cpp
+                        // Doing it here would be redundant, but keeps documents in stemmed form
+                        // Uncomment the line below if you want documents stored in stemmed form:
+                        current_content = apply_stemming_to_text(current_content);
+                        
                         current_content.erase(0, current_content.find_first_not_of(" \t\n\r\f\v"));
                         current_content.erase(current_content.find_last_not_of(" \t\n\r\f\v") + 1);
+                        
                         documents.push_back(Document{id_counter, current_content});
                         doc_name_to_id[current_docno] = id_counter++;
                     }
@@ -64,7 +93,7 @@ std::pair<DocumentCollection, DocNameToIdMap> load_trec_documents(const std::str
                 {
                     if (line.find("<DOCNO>") == 0)
                     {
-                        size_t start = 7; // "<DOCNO>" length
+                        size_t start = 7;
                         size_t end = line.find("</DOCNO>");
                         if (end != std::string::npos)
                         {
@@ -112,11 +141,10 @@ Qrels load_trec_qrels(const std::string &qrels_path, const DocNameToIdMap &doc_n
         std::stringstream ss(line);
         std::string query_id, iter, doc_name;
         int rel;
-        // Expect format: query_id 0 doc_id relevance
         if (ss >> query_id >> iter >> doc_name >> rel)
         {
             if (rel > 0)
-            { // Only include relevant or partially relevant documents
+            {
                 auto it = doc_name_to_id.find(doc_name);
                 if (it != doc_name_to_id.end())
                 {
@@ -136,7 +164,6 @@ Qrels load_trec_qrels(const std::string &qrels_path, const DocNameToIdMap &doc_n
     return qrels;
 }
 
-// FIXED: Proper XML tag parsing to extract clean query IDs and titles
 std::unordered_map<std::string, std::string> load_trec_topics(const std::string &topics_path)
 {
     std::unordered_map<std::string, std::string> topics;
@@ -154,7 +181,6 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
 
     while (std::getline(ifs, line))
     {
-        // Trim whitespace from line
         line.erase(0, line.find_first_not_of(" \t\n\r\f\v"));
         line.erase(line.find_last_not_of(" \t\n\r\f\v") + 1);
 
@@ -168,7 +194,6 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
         {
             if (in_top && !current_id.empty() && !current_title.empty())
             {
-                // Convert title to lowercase and trim
                 std::transform(current_title.begin(), current_title.end(),
                                current_title.begin(),
                                [](unsigned char c)
@@ -183,53 +208,42 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
         }
         else if (in_top)
         {
-            // FIXED: Parse <num> tag properly
-            // Expected format: <num>Number: 1
-            // or: <num> Number: 1
             if (line.find("<num>") != std::string::npos)
             {
                 size_t num_start = line.find("<num>");
-                size_t content_start = num_start + 5; // Length of "<num>"
+                size_t content_start = num_start + 5;
                 
                 std::string num_content = line.substr(content_start);
                 
-                // Remove "Number:" prefix if present
                 size_t colon_pos = num_content.find(':');
                 if (colon_pos != std::string::npos)
                 {
                     num_content = num_content.substr(colon_pos + 1);
                 }
                 
-                // Remove closing tag if present
                 size_t close_tag = num_content.find("</num>");
                 if (close_tag != std::string::npos)
                 {
                     num_content = num_content.substr(0, close_tag);
                 }
                 
-                // Trim and store
                 num_content.erase(0, num_content.find_first_not_of(" \t\n\r\f\v"));
                 num_content.erase(num_content.find_last_not_of(" \t\n\r\f\v") + 1);
                 current_id = num_content;
             }
-            // FIXED: Parse <title> tag properly
-            // Expected format: <title>coronavirus origin
-            // or: <title> coronavirus origin </title>
             else if (line.find("<title>") != std::string::npos)
             {
                 size_t title_start = line.find("<title>");
-                size_t content_start = title_start + 7; // Length of "<title>"
+                size_t content_start = title_start + 7;
                 
                 std::string title_content = line.substr(content_start);
                 
-                // Remove closing tag if present
                 size_t close_tag = title_content.find("</title>");
                 if (close_tag != std::string::npos)
                 {
                     title_content = title_content.substr(0, close_tag);
                 }
                 
-                // Trim and store
                 title_content.erase(0, title_content.find_first_not_of(" \t\n\r\f\v"));
                 title_content.erase(title_content.find_last_not_of(" \t\n\r\f\v") + 1);
                 current_title = title_content;
