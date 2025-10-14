@@ -1,5 +1,6 @@
 #include "retrieval/optimized_parallel_retrieval.h"
 #include <cilk/cilk.h>
+#include <cilk/cilk_stub.h>
 #include <fstream>
 #include <iostream>
 #include <algorithm>

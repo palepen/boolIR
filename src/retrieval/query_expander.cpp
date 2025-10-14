@@ -1,11 +1,12 @@
 #include "retrieval/query_expander.h"
-#include "tokenizer/porter_stemmer.h"
+// REMOVED: #include "tokenizer/porter_stemmer.h"
 #include <sstream>
 #include <algorithm>
 #include <cctype>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <set>
 
 QueryExpander::QueryExpander(const std::string& synonym_file_path) {
     load_synonyms(synonym_file_path);
@@ -71,40 +72,28 @@ std::unique_ptr<QueryNode> QueryExpander::expand_query(const std::string& query_
         // Convert to lowercase
         std::transform(term.begin(), term.end(), term.begin(), ::tolower);
         
-        // Apply Porter stemming (matching the indexing process)
-        std::string stemmed = PorterStemmer::stem(term);
-        
-        // Create OR node for this term's variations
+        // Create OR node for this term and its synonyms
         auto or_node = std::make_unique<QueryNode>(QueryOperator::OR);
         
-        // Always add the stemmed version (this matches indexed terms)
-        or_node->children.push_back(std::make_unique<QueryNode>(stemmed));
+        // Use a set to avoid adding duplicate terms
+        std::set<std::string> term_variations;
         
-        // Check if original term (before stemming) has synonyms
-        bool found_synonyms = false;
+        // Always add the original term
+        term_variations.insert(term);
+        
+        // Check for synonyms of the original term
         if (synonym_map_.count(term)) {
-            found_synonyms = true;
             for (const auto& synonym : synonym_map_.at(term)) {
-                std::string syn_stemmed = PorterStemmer::stem(synonym);
-                // Only add if different from main stemmed term
-                if (syn_stemmed != stemmed) {
-                    or_node->children.push_back(std::make_unique<QueryNode>(syn_stemmed));
-                }
+                term_variations.insert(synonym);
             }
         }
         
-        // Also check if stemmed term has synonyms
-        if (stemmed != term && synonym_map_.count(stemmed)) {
-            for (const auto& synonym : synonym_map_.at(stemmed)) {
-                std::string syn_stemmed = PorterStemmer::stem(synonym);
-                if (syn_stemmed != stemmed) {
-                    or_node->children.push_back(std::make_unique<QueryNode>(syn_stemmed));
-                }
-            }
+        // Add all unique variations to the OR node
+        for (const auto& variation : term_variations) {
+            or_node->children.push_back(std::make_unique<QueryNode>(variation));
         }
         
-        // If only one child in OR node, just add it directly to root
-        // This prevents unnecessary OR operations
+        // If only one child in OR node (no synonyms found), just add it directly to root
         if (or_node->children.size() == 1) {
             root->children.push_back(std::move(or_node->children[0]));
         } else {

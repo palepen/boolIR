@@ -1,13 +1,13 @@
 #include "data_loader.h"
-#include "tokenizer/porter_stemmer.h"
+#include "retrieval/query_preprocessor.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <cctype>
 #include <algorithm>
 
-// Helper function to apply stemming to text
-static std::string apply_stemming_to_text(const std::string& text) {
+// Helper function to normalize text by lowercasing and removing punctuation
+static std::string normalize_text(const std::string& text) {
     std::stringstream ss(text);
     std::stringstream result;
     std::string word;
@@ -20,7 +20,10 @@ static std::string apply_stemming_to_text(const std::string& text) {
         
         if (!word.empty()) {
             if (!first) result << " ";
-            result << PorterStemmer::stem(word);
+            // Only convert to lower case, no stemming
+            std::transform(word.begin(), word.end(), word.begin(),
+                           [](unsigned char c){ return std::tolower(c); });
+            result << word;
             first = false;
         }
     }
@@ -68,17 +71,8 @@ std::pair<DocumentCollection, DocNameToIdMap> load_trec_documents(const std::str
                 {
                     if (in_doc && !current_docno.empty() && !current_content.empty())
                     {
-                        // Convert content to lowercase
-                        std::transform(current_content.begin(), current_content.end(),
-                                       current_content.begin(),
-                                       [](unsigned char c)
-                                       { return std::tolower(c); });
-                        
-                        // Apply stemming (optional - can be commented out for speed)
-                        // Note: Stemming is already applied during indexing in bsbi_indexer.cpp
-                        // Doing it here would be redundant, but keeps documents in stemmed form
-                        // Uncomment the line below if you want documents stored in stemmed form:
-                        current_content = apply_stemming_to_text(current_content);
+                        // Normalize the content (lowercase, remove punctuation)
+                        current_content = normalize_text(current_content);
                         
                         current_content.erase(0, current_content.find_first_not_of(" \t\n\r\f\v"));
                         current_content.erase(current_content.find_last_not_of(" \t\n\r\f\v") + 1);
@@ -174,6 +168,9 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
         return topics;
     }
 
+    // Create query preprocessor for consistent preprocessing
+    QueryPreprocessor preprocessor;
+
     std::string line;
     std::string current_id;
     std::string current_title;
@@ -194,15 +191,22 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
         {
             if (in_top && !current_id.empty() && !current_title.empty())
             {
-                std::transform(current_title.begin(), current_title.end(),
-                               current_title.begin(),
-                               [](unsigned char c)
-                               { return std::tolower(c); });
-                current_title.erase(0, current_title.find_first_not_of(" \t\n\r\f\v"));
-                current_title.erase(current_title.find_last_not_of(" \t\n\r\f\v") + 1);
+                // Apply query preprocessing for consistency with document preprocessing
+                std::string preprocessed_title = preprocessor.preprocess(current_title);
                 
-                std::cout << "DEBUG: Loaded query ID='" << current_id << "' title='" << current_title << "'" << std::endl;
-                topics[current_id] = current_title;
+                if (!preprocessed_title.empty()) {
+                    topics[current_id] = preprocessed_title;
+                    std::cout << "DEBUG: Loaded query ID='" << current_id 
+                              << "' original='" << current_title 
+                              << "' preprocessed='" << preprocessed_title << "'" << std::endl;
+                } else {
+                    std::cerr << "Warning: Query " << current_id << " became empty after preprocessing" << std::endl;
+                    // Fallback to basic lowercase if preprocessing removes everything
+                    std::string fallback = current_title;
+                    std::transform(fallback.begin(), fallback.end(), fallback.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    topics[current_id] = fallback;
+                }
             }
             in_top = false;
         }
@@ -252,6 +256,6 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
     }
     ifs.close();
 
-    std::cout << "Loaded " << topics.size() << " topics" << std::endl;
+    std::cout << "Loaded " << topics.size() << " topics (with preprocessing)" << std::endl;
     return topics;
 }
