@@ -1,9 +1,12 @@
 # --- Compiler and Flags ---
 CXX = /opt/opencilk/bin/clang++
-CXXFLAGS = -std=c++17 -fopencilk -O3 -pthread -Iinclude -I/opt/onnxruntime/include
-# **THE FIX IS HERE**: Added -no-pie to the linker flags.
-LDFLAGS = -L/opt/opencilk/lib -L/opt/onnxruntime/lib -lonnxruntime -no-pie -lstemmer \
-          -Wl,-rpath,/opt/opencilk/lib,-rpath,/opt/onnxruntime/lib 
+# Allow CUDA_PATH to be overridden. Defaults to a common location.
+CUDA_PATH ?= /usr/local/cuda
+
+# Add the CUDA include path to CXXFLAGS
+CXXFLAGS = -std=c++17 -fopencilk -O3 -pthread -Iinclude -I/opt/onnxruntime/include -I$(CUDA_PATH)/include
+LDFLAGS = -L/opt/opencilk/lib -L/opt/onnxruntime/lib -lonnxruntime -no-pie \
+          -Wl,-rpath,/opt/opencilk/lib,-rpath,/opt/onnxruntime/lib -L$(CUDA_PATH)/lib64 -lcudart
 
 # --- Directories ---
 SRC_DIR = src
@@ -11,6 +14,13 @@ OBJ_DIR = build/obj
 BIN_DIR = build/bin
 RESULTS_DIR = results
 INDEX_DIR = index
+MODEL_DIR = models
+DATA_DIR = data
+
+# --- Benchmark Configuration ---
+CPU_WORKER_COUNTS = 1 2 4 8
+LOG_FILE = $(RESULTS_DIR)/full_benchmark_output.log
+CSV_FILE = $(RESULTS_DIR)/all_benchmarks.csv
 
 # --- Target Executable ---
 TARGET = $(BIN_DIR)/full_system_benchmark
@@ -27,103 +37,85 @@ INDEX_SRCS = $(SRC_DIR)/indexing/bsbi_indexer.cpp \
 
 RETRIEVAL_SRCS = $(SRC_DIR)/retrieval/retrieval_set.cpp \
                  $(SRC_DIR)/retrieval/optimized_parallel_retrieval.cpp \
-                 $(SRC_DIR)/retrieval/query_expander.cpp
+                 $(SRC_DIR)/retrieval/query_expander.cpp \
+                 $(SRC_DIR)/retrieval/query_preprocessor.cpp \
+                 $(SRC_DIR)/retrieval/pre_ranker.cpp
 
-RERANK_SRCS = $(SRC_DIR)/reranking/neural_reranker.cpp \
-              $(SRC_DIR)/reranking/parallel_gpu_reranking.cpp \
+RERANK_SRCS = $(SRC_DIR)/reranking/neural_reranker.cpp
 
-TOKEN_SRCS = $(SRC_DIR)/tokenizer/wordpiece_tokenizer.cpp \
-             $(SRC_DIR)/tokenizer/porter_stemmer.cpp
+TOKEN_SRCS = $(SRC_DIR)/tokenizer/wordpiece_tokenizer.cpp
 
 EVAL_SRCS = $(SRC_DIR)/evaluation/evaluator.cpp
 
 ALL_SRCS = $(CORE_SRCS) $(INDEX_SRCS) $(RETRIEVAL_SRCS) $(RERANK_SRCS) $(TOKEN_SRCS) $(EVAL_SRCS)
 ALL_OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 
-.PHONY: all clean model dirs index run benchmark test-stemmer compare-stemming
+.PHONY: all clean model dirs index run benchmark benchmark-all benchmark-indexing plot
 
 all: dirs $(TARGET)
 
-# Test stemmer
-test-stemmer: dirs $(OBJ_DIR)/tokenizer/porter_stemmer.o
-	@echo "Building stemmer test..."
-	@$(CXX) $(CXXFLAGS) test_stemmer.cpp $(OBJ_DIR)/tokenizer/porter_stemmer.o $(LDFLAGS) -o $(BIN_DIR)/test_stemmer
-	@echo "Running stemmer test..."
-	@./$(BIN_DIR)/test_stemmer
-
-# Compare vocabulary with/without stemming
-compare-stemming: dirs $(OBJ_DIR)/tokenizer/porter_stemmer.o
-	@echo "Building vocabulary comparison tool..."
-	@$(CXX) $(CXXFLAGS) compare_stemming.cpp $(OBJ_DIR)/tokenizer/porter_stemmer.o $(LDFLAGS) -o $(BIN_DIR)/compare_stemming
-	@echo "Analyzing first batch file..."
-	@./$(BIN_DIR)/compare_stemming data/cord19-trec-covid_corpus_batched/batch_00000.txt
-
 dirs:
-	@mkdir -p $(OBJ_DIR)/indexing
-	@mkdir -p $(OBJ_DIR)/retrieval
-	@mkdir -p $(OBJ_DIR)/reranking
-	@mkdir -p $(OBJ_DIR)/tokenizer
-	@mkdir -p $(OBJ_DIR)/evaluation
-	@mkdir -p $(BIN_DIR)
-	@mkdir -p $(RESULTS_DIR)
-	@mkdir -p $(INDEX_DIR)
+	@mkdir -p $(OBJ_DIR)/indexing $(OBJ_DIR)/retrieval $(OBJ_DIR)/reranking $(OBJ_DIR)/tokenizer $(OBJ_DIR)/evaluation
+	@mkdir -p $(BIN_DIR) $(RESULTS_DIR) $(INDEX_DIR)
 
 model:
 	@echo "Exporting BERT cross-encoder model to ONNX format..."
 	python3 scripts/export_model.py
 
 index: $(TARGET)
-	@echo "Building persistent on-disk index with Porter stemming..."
+	@echo "Building persistent on-disk index..."
 	@./$(TARGET) --build-index
+
+benchmark-indexing: $(TARGET)
+	@echo "Running indexing scalability benchmark..."
+	@./$(TARGET) --benchmark-indexing
 
 $(TARGET): $(ALL_OBJS)
 	@echo "[LINK] Building executable: $@"
 	@$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
 	@echo "Build complete: $@"
 
-# --- Explicit Compilation Rules ---
-$(OBJ_DIR)/main.o: $(SRC_DIR)/main.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/system_controller.o: $(SRC_DIR)/system_controller.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/benchmark_suite.o: $(SRC_DIR)/benchmark_suite.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/data_loader.o: $(SRC_DIR)/data_loader.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/indexing/bsbi_indexer.o: $(SRC_DIR)/indexing/bsbi_indexer.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/indexing/posting_list.o: $(SRC_DIR)/indexing/posting_list.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/indexing/performance_monitor.o: $(SRC_DIR)/indexing/performance_monitor.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/retrieval/retrieval_set.o: $(SRC_DIR)/retrieval/retrieval_set.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/retrieval/optimized_parallel_retrieval.o: $(SRC_DIR)/retrieval/optimized_parallel_retrieval.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/retrieval/query_expander.o: $(SRC_DIR)/retrieval/query_expander.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/reranking/neural_reranker.o: $(SRC_DIR)/reranking/neural_reranker.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/reranking/parallel_gpu_reranking.o: $(SRC_DIR)/reranking/parallel_gpu_reranking.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/reranking/gpu_worker_pool.o: $(SRC_DIR)/reranking/gpu_worker_pool.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/tokenizer/wordpiece_tokenizer.o: $(SRC_DIR)/tokenizer/wordpiece_tokenizer.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/tokenizer/porter_stemmer.o: $(SRC_DIR)/tokenizer/porter_stemmer.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-$(OBJ_DIR)/evaluation/evaluator.o: $(SRC_DIR)/evaluation/evaluator.cpp
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
+# --- Main Benchmark Target ---
+benchmark: $(TARGET) benchmark-all plot
+
+benchmark-all:
+	@echo "Running comprehensive scalability benchmarks..."
+	@echo "Results will be logged to $(LOG_FILE)"
+	@rm -f $(LOG_FILE) $(CSV_FILE)
+	@touch $(LOG_FILE)
+	@# Run Boolean benchmarks with varying CPU workers
+	@echo "\n--- Running Boolean Scalability Tests ---" | tee -a $(LOG_FILE)
+	@for workers in $(CPU_WORKER_COUNTS); do \
+		echo "\n[BENCHMARK] Boolean with $$workers CPU workers..." | tee -a $(LOG_FILE); \
+		CILK_NWORKERS=$$workers ./$(TARGET) --benchmark --label "Boolean_$$workers-cpu" --cpu-workers $$workers --no-rerank | tee -a $(LOG_FILE); \
+	done
+	@# Run Reranking benchmarks with varying CPU workers
+	@echo "\n--- Running Reranking Scalability Tests ---" | tee -a $(LOG_FILE)
+	@for cpu_w in $(CPU_WORKER_COUNTS); do \
+		echo "\n[BENCHMARK] Reranking with $$cpu_w CPU workers..." | tee -a $(LOG_FILE); \
+		CILK_NWORKERS=$$cpu_w ./$(TARGET) --benchmark --label "Rerank_$$cpu_w-cpu" --cpu-workers $$cpu_w | tee -a $(LOG_FILE); \
+	done
+	@echo "\nAll benchmarks completed. Consolidated results in $(CSV_FILE)"
+
+plot:
+	@echo "Generating performance plots from benchmark results..."
+	python3 scripts/evaluation_metrics.py --results $(CSV_FILE)
 
 run: $(TARGET)
 	@echo "Running quick demo..."
 	@./$(TARGET) --demo
 
-benchmark: $(TARGET)
-	@echo "Running comprehensive benchmarks..."
-	@./$(TARGET) --benchmark | tee $(RESULTS_DIR)/output.log
+# --- Object File Compilation Rules ---
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@echo "[CXX] Compiling $<"
+	@$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	@echo "Cleaning build artifacts..."
-	@rm -rf build $(INDEX_DIR)
+	@echo "Cleaning build"
+	@rm -rf build
+	@echo "Clean complete."
+
+clean-all:
+	@echo "Cleaning build, models, results, index, data"
+	@rm -rf build $(INDEX_DIR) $(RESULTS_DIR)/*.log $(RESULTS_DIR)/*.csv $(RESULTS_DIR)/*.png $(DATA_DIR) $(MODEL_DIR) 
 	@echo "Clean complete."

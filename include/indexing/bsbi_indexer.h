@@ -20,8 +20,8 @@ struct TermDocPair {
 };
 
 /**
- * BSBI Indexer with Porter Stemming
- * Pure Boolean inverted index construction
+ * BSBI Indexer with Performance Monitoring
+ * Pure Boolean inverted index construction with detailed metrics
  */
 class BSBIIndexer {
 public:
@@ -36,6 +36,7 @@ private:
     std::vector<std::string> generate_runs();
     std::string merge_runs(std::vector<std::string>& run_files);
     void create_final_index_files(const std::string& final_run_path);
+    void print_indexing_summary();
 
     const DocumentCollection& documents_;
     std::string index_path_;

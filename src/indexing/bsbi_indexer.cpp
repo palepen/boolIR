@@ -1,12 +1,13 @@
 #include "indexing/bsbi_indexer.h"
-#include "tokenizer/porter_stemmer.h"
 #include <cilk/cilk.h>
+#include <cilk/cilk_stub.h>
 #include <iostream>
 #include <fstream>
 #include <algorithm>
 #include <thread>
 #include <filesystem>
 #include <sstream>
+#include <iomanip>
 
 namespace fs = std::filesystem;
 
@@ -20,8 +21,6 @@ static std::vector<std::string> tokenize(const std::string& text) {
         if (!token.empty()) {
             std::transform(token.begin(), token.end(), token.begin(),
                            [](unsigned char c){ return std::tolower(c); });
-            // Apply Porter stemming
-            token = PorterStemmer::stem(token);
             tokens.push_back(token);
         }
     }
@@ -42,8 +41,10 @@ BSBIIndexer::BSBIIndexer(const DocumentCollection& documents,
 
 void BSBIIndexer::build_index() {
     perf_monitor_.start_timer("Total Indexing Time");
-    std::cout << "Starting BSBI Indexing with Porter Stemming..." << std::endl;
-    std::cout << "  -> Block size: " << (block_size_bytes_ / (1024 * 1024)) << " MB" << std::endl;
+    std::cout << "\n=== Starting BSBI Indexing ===" << std::endl;
+    std::cout << "Documents to index: " << documents_.size() << std::endl;
+    std::cout << "Block size: " << (block_size_bytes_ / (1024 * 1024)) << " MB" << std::endl;
+    std::cout << "CPU workers: " << std::thread::hardware_concurrency() << std::endl;
 
     perf_monitor_.start_timer("Phase 1: Generate Runs");
     std::vector<std::string> run_files = generate_runs();
@@ -60,16 +61,58 @@ void BSBIIndexer::build_index() {
     fs::remove_all(temp_path_);
 
     perf_monitor_.end_timer("Total Indexing Time");
-    perf_monitor_.print_summary();
+    
+    // Print detailed summary
+    print_indexing_summary();
 }
 
-
+void BSBIIndexer::print_indexing_summary() {
+    double total_time = perf_monitor_.get_duration_ms("Total Indexing Time");
+    double phase1_time = perf_monitor_.get_duration_ms("Phase 1: Generate Runs");
+    double phase2_time = perf_monitor_.get_duration_ms("Phase 2: Merge Runs");
+    double phase3_time = perf_monitor_.get_duration_ms("Phase 3: Create Final Index");
+    
+    double throughput = (documents_.size() * 1000.0) / total_time;
+    
+    std::cout << "\n" << std::string(70, '=') << std::endl;
+    std::cout << "INDEXING PERFORMANCE SUMMARY" << std::endl;
+    std::cout << std::string(70, '=') << std::endl;
+    
+    std::cout << "\nConfiguration:" << std::endl;
+    std::cout << "  Total Documents: " << documents_.size() << std::endl;
+    std::cout << "  CPU Workers: " << std::thread::hardware_concurrency() << std::endl;
+    std::cout << "  Block Size: " << (block_size_bytes_ / (1024 * 1024)) << " MB" << std::endl;
+    
+    std::cout << "\nOverall Performance:" << std::endl;
+    std::cout << "  Total Time: " << std::fixed << std::setprecision(2) 
+              << total_time << " ms (" << (total_time / 1000.0) << " seconds)" << std::endl;
+    std::cout << "  Throughput: " << std::fixed << std::setprecision(0) 
+              << throughput << " documents/second" << std::endl;
+    
+    std::cout << "\nPhase Breakdown:" << std::endl;
+    std::cout << "  Phase                    | Time (ms) | Percentage" << std::endl;
+    std::cout << "  -------------------------|-----------|------------" << std::endl;
+    std::cout << "  1. Generate Runs         | " 
+              << std::setw(9) << std::fixed << std::setprecision(0) << phase1_time << " | "
+              << std::setw(9) << std::fixed << std::setprecision(1) << (phase1_time / total_time * 100.0) << "%" << std::endl;
+    std::cout << "  2. Merge Runs            | " 
+              << std::setw(9) << std::fixed << std::setprecision(0) << phase2_time << " | "
+              << std::setw(9) << std::fixed << std::setprecision(1) << (phase2_time / total_time * 100.0) << "%" << std::endl;
+    std::cout << "  3. Create Final Index    | " 
+              << std::setw(9) << std::fixed << std::setprecision(0) << phase3_time << " | "
+              << std::setw(9) << std::fixed << std::setprecision(1) << (phase3_time / total_time * 100.0) << "%" << std::endl;
+    
+    std::cout << "\n" << std::string(70, '=') << std::endl;
+}
 
 std::vector<std::string> BSBIIndexer::generate_runs() {
-    std::cout << "Phase 1: Generating sorted runs with Porter stemming..." << std::endl;
+    std::cout << "\nPhase 1: Generating sorted runs..." << std::endl;
     size_t num_docs = documents_.size();
     size_t num_workers = std::thread::hardware_concurrency();
     size_t docs_per_worker = (num_docs + num_workers - 1) / num_workers;
+    
+    std::cout << "  Parallel processing with " << num_workers << " workers" << std::endl;
+    std::cout << "  ~" << docs_per_worker << " documents per worker" << std::endl;
     
     std::vector<std::string> all_run_files;
 
@@ -118,18 +161,25 @@ std::vector<std::string> BSBIIndexer::generate_runs() {
         }
     }
 
-    std::cout << "  -> Generated " << all_run_files.size() << " initial run files." << std::endl;
+    std::cout << "  Generated " << all_run_files.size() << " initial run files" << std::endl;
     return all_run_files;
 }
 
 std::string BSBIIndexer::merge_runs(std::vector<std::string>& run_files) {
-    std::cout << "Phase 2: Merging runs..." << std::endl;
+    std::cout << "\nPhase 2: Merging runs..." << std::endl;
     int pass_num = 0;
+    int total_merges = 0;
+    
     while (run_files.size() > 1) {
-        std::cout << "  -> Merge Pass " << ++pass_num << ": merging " << run_files.size() << " files into " << (run_files.size() + 1) / 2 << "..." << std::endl;
+        size_t files_to_merge = run_files.size();
+        size_t pairs_to_merge = files_to_merge / 2;
+        
+        std::cout << "  Merge Pass " << ++pass_num << ": " << files_to_merge 
+                  << " files -> " << ((files_to_merge + 1) / 2) << " files" << std::endl;
+        
         std::vector<std::string> next_pass_files;
         
-        cilk_for (size_t i = 0; i < run_files.size() / 2; ++i) {
+        cilk_for (size_t i = 0; i < pairs_to_merge; ++i) {
             std::string file1_path = run_files[i * 2];
             std::string file2_path = run_files[i * 2 + 1];
             std::string out_path = temp_path_ + "/merge_p" + std::to_string(pass_num) + "_" + std::to_string(i) + ".dat";
@@ -178,15 +228,17 @@ std::string BSBIIndexer::merge_runs(std::vector<std::string>& run_files) {
             next_pass_files.push_back(run_files.back());
         }
 
+        total_merges += pairs_to_merge;
         run_files = next_pass_files;
     }
     
-    std::cout << "  -> Merging complete." << std::endl;
+    std::cout << "  Merging complete: " << pass_num << " passes, " 
+              << total_merges << " total merge operations" << std::endl;
     return run_files.empty() ? "" : run_files[0];
 }
 
 void BSBIIndexer::create_final_index_files(const std::string& final_run_path) {
-    std::cout << "Phase 3: Creating final dictionary and postings files..." << std::endl;
+    std::cout << "\nPhase 3: Creating final dictionary and postings files..." << std::endl;
     std::ifstream in(final_run_path, std::ios::binary);
     std::ofstream dict_out(index_path_ + "/dictionary.dat", std::ios::binary);
     std::ofstream post_out(index_path_ + "/postings.dat", std::ios::binary);
@@ -194,6 +246,8 @@ void BSBIIndexer::create_final_index_files(const std::string& final_run_path) {
     std::string current_term;
     std::vector<unsigned int> postings;
     long long current_offset = 0;
+    size_t unique_terms = 0;
+    size_t total_postings = 0;
     
     std::string term_str;
     unsigned int doc_id;
@@ -207,6 +261,8 @@ void BSBIIndexer::create_final_index_files(const std::string& final_run_path) {
             post_out.write(reinterpret_cast<const char*>(postings.data()), list_size * sizeof(unsigned int));
             current_offset = post_out.tellp();
             
+            unique_terms++;
+            total_postings += postings.size();
             postings.clear();
         }
         current_term = term_str;
@@ -221,7 +277,14 @@ void BSBIIndexer::create_final_index_files(const std::string& final_run_path) {
         size_t list_size = postings.size();
         dict_out.write(reinterpret_cast<const char*>(&list_size), sizeof(list_size));
         post_out.write(reinterpret_cast<const char*>(postings.data()), list_size * sizeof(unsigned int));
+        
+        unique_terms++;
+        total_postings += postings.size();
     }
 
-    std::cout << "  -> Final index created in: " << index_path_ << std::endl;
+    std::cout << "  Unique terms indexed: " << unique_terms << std::endl;
+    std::cout << "  Total postings: " << total_postings << std::endl;
+    std::cout << "  Average postings per term: " << std::fixed << std::setprecision(1) 
+              << (unique_terms > 0 ? static_cast<double>(total_postings) / unique_terms : 0.0) << std::endl;
+    std::cout << "  Index created in: " << index_path_ << std::endl;
 }

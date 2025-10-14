@@ -8,6 +8,9 @@ struct Document {
     u_int id;
     std::string content;
     Document(u_int id, std::string &content) : id(id), content(content) {}
+    Document(u_int id, const std::string &content) : id(id), content(content) {}
+
+    
 };
 
 // A collection of documents, used as the input for the indexers.
