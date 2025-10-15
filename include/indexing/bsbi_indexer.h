@@ -28,20 +28,26 @@ public:
     BSBIIndexer(const DocumentCollection& documents,
                 const std::string& index_path,
                 const std::string& temp_path,
-                size_t block_size_mb = 256);
+                size_t block_size_mb = 256,
+                size_t num_shards = 64, 
+                size_t num_workers = 0);
 
-    void build_index();
-
+    void build_index(); // This will now build a sharded index
+    
 private:
     std::vector<std::string> generate_runs();
     std::string merge_runs(std::vector<std::string>& run_files);
-    void create_final_index_files(const std::string& final_run_path);
+    void create_sharded_index_files(const std::string& final_run_path); 
+    void create_document_store();
     void print_indexing_summary();
+    size_t get_effective_workers() const;
 
     const DocumentCollection& documents_;
     std::string index_path_;
     std::string temp_path_;
     size_t block_size_bytes_;
+    size_t num_shards_; 
+    size_t num_workers_;
     PerformanceMonitor perf_monitor_;
     std::mutex vector_mutex_;
 };

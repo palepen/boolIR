@@ -5,55 +5,42 @@
 #include <stdexcept>
 #include <sstream>
 #include <unordered_set>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 HighPerformanceIRSystem::HighPerformanceIRSystem(
-    const std::string& index_path, 
-    const std::string& synonym_path,
-    std::unique_ptr<PreRanker> pre_ranker
-) : pre_ranker_(std::move(pre_ranker)) {
+    const std::string &index_path,
+    const std::string &synonym_path,
+    size_t num_shards)
+{
     query_expander_ = std::make_unique<QueryExpander>(synonym_path);
     query_preprocessor_ = std::make_unique<QueryPreprocessor>();
-    
-    std::string dict_path = index_path + "/dictionary.dat";
-    std::string post_path = index_path + "/postings.dat";
-    retriever_ = std::make_unique<OptimizedParallelRetrieval>(dict_path, post_path);
+    retriever_ = std::make_unique<DynamicParallelRetriever>(index_path, num_shards);
+    std::cout << "Using dynamic sharded retrieval with " << num_shards << " shards" << std::endl;
 }
 
-std::unique_ptr<QueryNode> HighPerformanceIRSystem::expand_query(const std::string& query_str) {
-    if (!query_expander_) {
-        throw std::runtime_error("Query expander is not initialized.");
-    }
-    
-    // First preprocess the query for consistency
-    if (!query_preprocessor_) {
-        throw std::runtime_error("Query preprocessor is not initialized.");
-    }
-    
+std::unique_ptr<QueryNode> HighPerformanceIRSystem::expand_query(const std::string &query_str)
+{
     std::string preprocessed = query_preprocessor_->preprocess(query_str);
-    
-    // Then expand with synonyms
     return query_expander_->expand_query(preprocessed);
 }
 
 std::vector<SearchResult> HighPerformanceIRSystem::search_boolean(
-    const std::string& query_str,
-    const DocumentCollection& documents
-) {
+    const std::string &query_str)
+{
     std::unique_ptr<QueryNode> query_tree = expand_query(query_str);
-    ResultSet candidates_result = retriever_->execute_query_optimized(*query_tree);
 
-    // Create the map for document lookup
-    std::unordered_map<unsigned int, const Document*> doc_id_map;
-    doc_id_map.reserve(documents.size());
-    for(const auto& doc : documents) {
-        doc_id_map[doc.id] = &doc;
+    ResultSet candidates_result = retriever_->execute_query(*query_tree);
+
+    std::vector<SearchResult> pure_boolean_results;
+    pure_boolean_results.reserve(candidates_result.doc_ids.size());
+
+    for (unsigned int doc_id : candidates_result.doc_ids)
+    {
+        // Assign a uniform score of 1.0f to all matching documents.
+        pure_boolean_results.emplace_back(doc_id, 1.0f);
     }
 
-    if (!pre_ranker_) {
-        throw std::runtime_error("Pre-ranker is not initialized.");
-    }
-    
-    // Use the original query (before preprocessing) for ranking
-    // This preserves the user's intent for term overlap scoring
-    return pre_ranker_->rank(query_str, candidates_result, doc_id_map);
+    return pure_boolean_results;
 }

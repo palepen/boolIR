@@ -1,11 +1,10 @@
 #ifndef SYSTEM_CONTROLLER_H
 #define SYSTEM_CONTROLLER_H
 
-#include "retrieval/optimized_parallel_retrieval.h"
+#include "retrieval/dynamic_retriever.h" // MODIFIED
 #include "retrieval/query_expander.h"
 #include "retrieval/query_preprocessor.h"
-#include "retrieval/pre_ranker.h"
-#include "indexing/document.h"
+#include "document_store.h"
 #include "common_types.h"
 #include <memory>
 #include <vector>
@@ -16,13 +15,11 @@ public:
     HighPerformanceIRSystem(
         const std::string& index_path, 
         const std::string& synonym_path,
-        std::unique_ptr<PreRanker> pre_ranker
+        size_t num_shards = 64 // MODIFIED
     );
     
-    // Returns a pre-ranked list of candidate documents from Boolean retrieval
     std::vector<SearchResult> search_boolean(
-        const std::string& query_str,
-        const DocumentCollection& documents
+        const std::string& query_str
     );
     
 private:
@@ -30,8 +27,7 @@ private:
 
     std::unique_ptr<QueryExpander> query_expander_;
     std::unique_ptr<QueryPreprocessor> query_preprocessor_;
-    std::unique_ptr<OptimizedParallelRetrieval> retriever_;
-    std::unique_ptr<PreRanker> pre_ranker_;
+    std::unique_ptr<DynamicParallelRetriever> retriever_; // MODIFIED
 };
 
 #endif
