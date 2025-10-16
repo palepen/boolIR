@@ -34,12 +34,14 @@ static std::vector<std::string> tokenize(const std::string &text)
 }
 
 BSBIIndexer::BSBIIndexer(const DocumentCollection& documents,
+                         const IdToDocNameMap& id_to_doc_name,  
                          const std::string& index_path,
                          const std::string& temp_path,
                          size_t block_size_mb,
                          size_t num_shards, 
                          size_t num_workers)
     : documents_(documents),
+      id_to_doc_name_(id_to_doc_name),  
       index_path_(index_path),
       temp_path_(temp_path),
       block_size_bytes_(block_size_mb * 1024 * 1024),
@@ -48,6 +50,7 @@ BSBIIndexer::BSBIIndexer(const DocumentCollection& documents,
     fs::create_directories(index_path_);
     fs::create_directories(temp_path_);
 }
+
 size_t BSBIIndexer::get_effective_workers() const {
     // If num_workers_ is 0, use all available cores
     // Otherwise, use the specified count
@@ -341,17 +344,18 @@ std::string BSBIIndexer::merge_runs(std::vector<std::string> &run_files)
 }
 
 
-
 void BSBIIndexer::create_document_store()
 {
     std::cout << "\nPhase 4: Creating document store..." << std::endl;
     std::string doc_store_path = index_path_ + "/documents.dat";
     std::string doc_offset_path = index_path_ + "/doc_offsets.dat";
+    std::string doc_names_path = index_path_ + "/doc_names.dat";  // NEW
 
     std::ofstream doc_store(doc_store_path, std::ios::binary);
     std::ofstream doc_offsets(doc_offset_path, std::ios::binary);
+    std::ofstream doc_names(doc_names_path, std::ios::binary);  // NEW
 
-    if (!doc_store || !doc_offsets)
+    if (!doc_store || !doc_offsets || !doc_names)
     {
         throw std::runtime_error("Failed to create document store files");
     }
@@ -371,8 +375,20 @@ void BSBIIndexer::create_document_store()
         doc_store.write(doc.content.c_str(), content_length);
 
         current_offset = doc_store.tellp();
+        
+        // NEW: Write document name mapping
+        auto name_it = id_to_doc_name_.find(doc.id);
+        if (name_it != id_to_doc_name_.end()) {
+            const std::string& doc_name = name_it->second;
+            uint32_t name_length = doc_name.length();
+            
+            doc_names.write(reinterpret_cast<const char*>(&doc.id), sizeof(doc.id));
+            doc_names.write(reinterpret_cast<const char*>(&name_length), sizeof(name_length));
+            doc_names.write(doc_name.c_str(), name_length);
+        }
     }
 
     std::cout << "  Document store created: " << documents_.size() << " documents" << std::endl;
     std::cout << "  Store size: " << (current_offset / (1024.0 * 1024.0)) << " MB" << std::endl;
+    std::cout << "  Document names saved: " << id_to_doc_name_.size() << " entries" << std::endl;
 }

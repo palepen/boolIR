@@ -1,4 +1,3 @@
-
 OPENCILK_PATH := /opt/opencilk/
 LIBTORCH_PATH := /opt/libtorch
 CUDA_INCLUDE_PATH := /usr/local/cuda-13/include
@@ -56,13 +55,19 @@ EVAL_SRCS = $(SRC_DIR)/evaluation/evaluator.cpp
 ALL_SRCS = $(CORE_SRCS) $(INDEX_SRCS) $(RETRIEVAL_SRCS) $(RERANK_SRCS) $(TOKEN_SRCS) $(EVAL_SRCS)
 ALL_OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 
-.PHONY: all clean model dirs index run benchmark benchmark-indexing plot
+.PHONY: all clean model dirs index run benchmark benchmark-indexing plot data
 
 all: dirs $(TARGET)
 
 dirs:
 	@mkdir -p $(OBJ_DIR)/indexing $(OBJ_DIR)/retrieval $(OBJ_DIR)/reranking $(OBJ_DIR)/tokenizer $(OBJ_DIR)/evaluation
 	@mkdir -p $(BIN_DIR) $(RESULTS_DIR) $(INDEX_DIR)
+
+# NEW: Target to download and prepare dataset with individual document files
+data:
+	@echo "Downloading TREC-COVID dataset (individual document files)..."
+	@python3 scripts/download_dataset.py
+	@echo "Dataset ready at: data/cord19-trec-covid_corpus/"
 
 model:
 	@echo "Exporting BERT cross-encoder model to TorchScript format..."
@@ -82,15 +87,13 @@ benchmark-indexing: $(TARGET)
 	@echo "Running indexing scalability benchmark..."
 	@./$(TARGET) --benchmark-indexing
 
-# --- Main Benchmark & Run Targets (Simplified) ---
 benchmark: $(TARGET)
 	@echo "Running integrated query performance benchmarks..."
-	# ...
 	@for workers in $(CPU_WORKER_COUNTS); do \
-		echo "\n[BENCHMARK] Running with $$workers CPU workers..." | tee -a $(LOG_FILE); \
-		CILK_NWORKERS=$$workers ./$(TARGET) --benchmark --label "Sharded_$$workers-cpu" --cpu-workers $$workers | tee -a $(LOG_FILE); \
+		echo "\n[BENCHMARK] Running with $$workers CPU workers..."; \
+		CILK_NWORKERS=$$workers ./$(TARGET) --benchmark --label "Sharded_$$workers-cpu" --cpu-workers $$workers; \
 	done
-	@echo "\nAll benchmarks completed. Consolidated results in $(CSV_FILE)"
+	@echo "\nAll benchmarks completed. Results in $(RESULTS_DIR)/all_benchmarks.csv"
 
 run: $(TARGET)
 	@echo "Running interactive mode..."
