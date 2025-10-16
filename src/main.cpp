@@ -163,7 +163,7 @@ int main(int argc, char **argv) {
                 std::cout << "  " << (i + 1) << ". DocID: " << candidates[i].doc_id << std::endl;
             }
 
-            const size_t MAX_CANDIDATES_FOR_RERANK = 1000;
+            const size_t MAX_CANDIDATES_FOR_RERANK = 1024;
             std::cout << "\n(Taking top " << MAX_CANDIDATES_FOR_RERANK << " candidates for reranking...)" << std::endl;
 
             // 2. Rerank only the top N candidates
@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
                 for (size_t i = 0; i < rerank_count; ++i) {
                     const Document* doc_ptr = doc_store.get_document(candidates[i].doc_id);
                     if (doc_ptr) {
-                         docs_to_rerank.emplace_back(candidates[i].doc_id, truncate_to_words(doc_ptr->content, 200));
+                         docs_to_rerank.emplace_back(candidates[i].doc_id, truncate_to_words(doc_ptr->content, 256));
                     }
                 }
             }

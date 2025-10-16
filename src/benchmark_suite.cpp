@@ -100,19 +100,25 @@ void BenchmarkSuite::run_integrated_benchmark(const BenchmarkConfig &config)
     std::vector<std::pair<std::string, std::vector<SearchResult>>> reranked_results_vec(queries.size());
     const auto &doc_map = doc_store_.get_all();
 
+    const size_t MAX_CANDIDATES_FOR_RERANK = 2000;
+    std::cout << "\n(Taking top " << MAX_CANDIDATES_FOR_RERANK << " candidates for reranking...)" << std::endl;
+
+    
     cilk_for(size_t i = 0; i < queries.size(); ++i)
     {
         const auto &[qid, qtext] = queries[i];
         const auto &candidates = boolean_results_vec[i].second;
 
         std::vector<Document> candidate_docs;
-        candidate_docs.reserve(candidates.size());
-        for (const auto &res : candidates)
+        size_t rerank_count = std::min(candidates.size(), MAX_CANDIDATES_FOR_RERANK);
+        candidate_docs.reserve(rerank_count);
+        for (size_t k = 0; k < rerank_count; k++)
         {
-            auto it = doc_map.find(res.doc_id);
+            auto it = doc_map.find(candidates[k].doc_id);
             if (it != doc_map.end())
             {
-                candidate_docs.emplace_back(res.doc_id, truncate_to_words(it->second.content, 200));
+                candidate_docs.emplace_back(candidates[k].doc_id, truncate_to_words(it->second.content, 256));
+                
             }
         }
 

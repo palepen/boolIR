@@ -61,35 +61,66 @@ ResultSet ResultSet::union_sets(const ResultSet &a, const ResultSet &b)
     const auto &a_ids = a.doc_ids;
     const auto &b_ids = b.doc_ids;
 
-    // Early exit optimizations
     if (a_ids.empty())
         return b;
     if (b_ids.empty())
         return a;
 
-    // Reserve space to avoid reallocations
     result.doc_ids.reserve(a_ids.size() + b_ids.size());
 
     size_t i = 0, j = 0;
-    while (i < a_ids.size() || j < b_ids.size())
+    while (i < a_ids.size() && j < b_ids.size())
     {
-        if (i < a_ids.size() && (j == b_ids.size() || a_ids[i] < b_ids[j]))
+        if (a_ids[i] < b_ids[j])
         {
-            result.doc_ids.push_back(a_ids[i]);
+            // Add from a, ensuring it's not a duplicate of what's already in the result
+            if (result.doc_ids.empty() || result.doc_ids.back() != a_ids[i])
+            {
+                result.doc_ids.push_back(a_ids[i]);
+            }
             i++;
         }
-        else if (j < b_ids.size() && (i == a_ids.size() || b_ids[j] < a_ids[i]))
+        else if (b_ids[j] < a_ids[i])
         {
-            result.doc_ids.push_back(b_ids[j]);
+            // Add from b, ensuring it's not a duplicate
+            if (result.doc_ids.empty() || result.doc_ids.back() != b_ids[j])
+            {
+                result.doc_ids.push_back(b_ids[j]);
+            }
             j++;
         }
-        else if (i < a_ids.size() && j < b_ids.size())
-        {
-            result.doc_ids.push_back(a_ids[i]);
+        else
+        { // a_ids[i] == b_ids[j]
+            // Add the element once, ensuring it's not a duplicate
+            if (result.doc_ids.empty() || result.doc_ids.back() != a_ids[i])
+            {
+                result.doc_ids.push_back(a_ids[i]);
+            }
             i++;
             j++;
         }
     }
+
+    // Add remaining elements from list a, checking for duplicates
+    while (i < a_ids.size())
+    {
+        if (result.doc_ids.empty() || result.doc_ids.back() != a_ids[i])
+        {
+            result.doc_ids.push_back(a_ids[i]);
+        }
+        i++;
+    }
+
+    // Add remaining elements from list b, checking for duplicates
+    while (j < b_ids.size())
+    {
+        if (result.doc_ids.empty() || result.doc_ids.back() != b_ids[j])
+        {
+            result.doc_ids.push_back(b_ids[j]);
+        }
+        j++;
+    }
+
     return result;
 }
 

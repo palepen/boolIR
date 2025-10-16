@@ -6,7 +6,7 @@ CUDA_INCLUDE_PATH := /usr/local/cuda-13/include
 CUDA_LIB_PATH := /usr/local/cuda-13.0/targets/x86_64-linux/lib
 
 CXX = $(OPENCILK_PATH)/bin/clang++
-
+CPU_WORKER_COUNTS = 1 2 4 8 12
 
 CXXFLAGS = -std=c++17 -fopencilk -O3 -pthread \
            -Iinclude \
@@ -82,13 +82,22 @@ benchmark-indexing: $(TARGET)
 	@echo "Running indexing scalability benchmark..."
 	@./$(TARGET) --benchmark-indexing
 
+# --- Main Benchmark & Run Targets (Simplified) ---
 benchmark: $(TARGET)
 	@echo "Running integrated query performance benchmarks..."
-	@./$(TARGET) --benchmark
+	# ...
+	@for workers in $(CPU_WORKER_COUNTS); do \
+		echo "\n[BENCHMARK] Running with $$workers CPU workers..." | tee -a $(LOG_FILE); \
+		CILK_NWORKERS=$$workers ./$(TARGET) --benchmark --label "Sharded_$$workers-cpu" --cpu-workers $$workers | tee -a $(LOG_FILE); \
+	done
+	@echo "\nAll benchmarks completed. Consolidated results in $(CSV_FILE)"
 
 run: $(TARGET)
 	@echo "Running interactive mode..."
 	@./$(TARGET) --interactive
+
+plot: $(RESULTS_DIR)/all_benchmarks.csv
+	python3 scripts/evaluation_metrics.py --results $(RESULTS_DIR)/all_benchmarks.csv
 
 # --- Object File Compilation Rules ---
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
