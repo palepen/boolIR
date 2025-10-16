@@ -32,7 +32,13 @@ std::vector<SearchResult> HighPerformanceIRSystem::search_boolean(
     std::unique_ptr<QueryNode> query_tree = expand_query(query_str);
 
     ResultSet candidates_result = retriever_->execute_query(*query_tree);
+    std::sort(candidates_result.doc_ids.begin(), candidates_result.doc_ids.end());
 
+    candidates_result.doc_ids.erase(
+        std::unique(candidates_result.doc_ids.begin(), candidates_result.doc_ids.end()),
+        candidates_result.doc_ids.end()
+    );
+    
     std::vector<SearchResult> pure_boolean_results;
     pure_boolean_results.reserve(candidates_result.doc_ids.size());
 

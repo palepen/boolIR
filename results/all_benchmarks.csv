@@ -1,0 +1,2 @@
+label,num_cpu_workers,use_reranking,query_processing_time_ms,throughput_qps,precision_at_10,map,mrr,ndcg_at_10,avg_retrieval_ms,avg_reranking_ms,median_latency_ms,p95_latency_ms
+default_run,12,0,117.222,426.54,0.256,0.0385829,0.394438,0.254813,2.34252,0,1.67464,5.88646

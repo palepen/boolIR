@@ -1,204 +1,114 @@
 #include "reranking/neural_reranker.h"
+#include <torch/torch.h>
 #include <iostream>
 #include <numeric>
 #include <algorithm>
-#include <chrono>
-#include <unordered_map>
-#include <sstream>
-#include <cuda_runtime.h>
-
-// Helper for checking CUDA calls
-#define CUDA_CHECK(call)                                          \
-    do                                                            \
-    {                                                             \
-        cudaError_t err = call;                                   \
-        if (err != cudaSuccess)                                   \
-        {                                                         \
-            fprintf(stderr, "CUDA Error: %s at %s:%d\n",          \
-                    cudaGetErrorString(err), __FILE__, __LINE__); \
-            throw std::runtime_error("CUDA call failed.");        \
-        }                                                         \
-    } while (0)
+#include <stdexcept>
 
 GpuNeuralReranker::GpuNeuralReranker(
     const char *model_path,
     const char *vocab_path,
-    size_t batch_size) : env_(ORT_LOGGING_LEVEL_WARNING, "gpu_reranker"),
-                         batch_size_(batch_size),
-                         session_(env_, model_path, []()
-                                  {
-        Ort::SessionOptions opts;
-        OrtCUDAProviderOptions cuda_options{};
-        cuda_options.device_id = 0;
-        opts.AppendExecutionProvider_CUDA(cuda_options);
-        return opts; }()),
-                         memory_info_device_("Cuda", OrtArenaAllocator, 0, OrtMemTypeDefault)
+    size_t batch_size) 
+    : device_(torch::kCUDA),
+      batch_size_(batch_size)
 {
-    std::cout << "Loading GPU cross-encoder model from: " << model_path << std::endl;
+    std::cout << "Loading TorchScript cross-encoder model from: " << model_path << std::endl;
     tokenizer_ = std::make_unique<WordPieceTokenizer>(vocab_path);
 
-    // OPTIMIZATION: Using max_seq_len = 256 instead of 512 for 2x speedup
-    std::vector<int64_t> input_shape = {static_cast<int64_t>(batch_size_), max_seq_len_};
-    size_t input_size = batch_size_ * max_seq_len_;
-
-    // Allocate GPU buffers
-    CUDA_CHECK(cudaMalloc(&d_input_ids_, input_size * sizeof(int64_t)));
-    CUDA_CHECK(cudaMalloc(&d_attention_mask_, input_size * sizeof(int64_t)));
-
-    // Determine output size
-    auto output_type_info = session_.GetOutputTypeInfo(0);
-    auto output_tensor_info = output_type_info.GetTensorTypeAndShapeInfo();
-    auto output_shape = output_tensor_info.GetShape();
-    output_dim_ = (output_shape.size() > 1) ? output_shape[1] : 1;
-    size_t output_size = batch_size_ * output_dim_;
-
-    CUDA_CHECK(cudaMalloc(&d_output_, output_size * sizeof(float)));
-
-    std::cout << "GPU cross-encoder loaded (batch=" << batch_size_
-              << ", max_seq_len=" << max_seq_len_ << ", output_dim=" << output_dim_ << ")" << std::endl;
+    try {
+        module_ = torch::jit::load(model_path);
+        module_.to(device_);
+        module_.eval();
+    } catch (const c10::Error& e) {
+        throw std::runtime_error("Error loading TorchScript model: " + std::string(e.what()));
+    }
+    
+    // --- NEW: Pre-allocate GPU tensors here ---
+    auto tensor_options = torch::TensorOptions().dtype(torch::kLong).device(device_);
+    input_ids_gpu_ = torch::zeros({(long)batch_size_, max_seq_len_}, tensor_options);
+    attention_mask_gpu_ = torch::zeros({(long)batch_size_, max_seq_len_}, tensor_options);
+    
+    // Warm-up run
+    // ...
+    
+    std::cout << "GPU cross-encoder loaded via LibTorch (batch=" << batch_size_
+              << ", max_seq_len=" << max_seq_len_ << ")" << std::endl;
 }
 
-GpuNeuralReranker::~GpuNeuralReranker()
-{
-    if (d_input_ids_)
-        cudaFree(d_input_ids_);
-    if (d_attention_mask_)
-        cudaFree(d_attention_mask_);
-    if (d_output_)
-        cudaFree(d_output_);
-}
-
-std::vector<ScoredDocument> GpuNeuralReranker::rerank(
+std::vector<ScoredDocument> GpuNeuralReranker::rerank_batch(
     const std::string &query,
-    const std::vector<Document> &candidates)
-{
-    if (candidates.empty())
-    {
-        return {};
-    }
+    const std::vector<Document> &batch_docs
+) {
+    if (batch_docs.empty()) return {};
+    
+    torch::NoGradGuard no_grad;
 
-    std::vector<ScoredDocument> ranked_results;
-    ranked_results.reserve(candidates.size());
+    size_t current_batch_size = batch_docs.size();
+    
+    std::vector<int64_t> all_input_ids;
+    std::vector<int64_t> all_attention_masks;
+    all_input_ids.reserve(current_batch_size * max_seq_len_);
+    all_attention_masks.reserve(current_batch_size * max_seq_len_);
 
-    for (size_t i = 0; i < candidates.size(); i += batch_size_)
-    {
-        size_t end_idx = std::min(i + batch_size_, candidates.size());
-        std::vector<Document> batch_docs(candidates.begin() + i, candidates.begin() + end_idx);
-
-        std::vector<float> batch_scores = compute_batch_scores_with_length(query, batch_docs, max_seq_len_);
-
-        for (size_t j = 0; j < batch_docs.size(); ++j)
-        {
-            ranked_results.push_back({batch_docs[j].id, batch_scores[j]});
-        }
-    }
-
-    std::sort(ranked_results.begin(), ranked_results.end());
-
-    return ranked_results;
-}
-
-std::vector<float> GpuNeuralReranker::compute_batch_scores_with_length(
-    const std::string &query,
-    const std::vector<Document> &documents,
-    int64_t seq_len)
-{
-    if (documents.empty())
-    {
-        return {};
-    }
-
-    size_t current_batch_size = documents.size();
-    size_t input_size = current_batch_size * seq_len;
-
-    std::vector<int64_t> all_input_ids(input_size);
-    std::vector<int64_t> all_attention_masks(input_size);
-
-    for (size_t i = 0; i < current_batch_size; ++i)
-    {
+    for (const auto& doc : batch_docs) {
         std::vector<int64_t> input_ids_vec;
         std::vector<int64_t> attention_mask_vec;
-        tokenizer_->encode_pair(query, documents[i].content, seq_len, input_ids_vec, attention_mask_vec);
-
-        std::copy(input_ids_vec.begin(), input_ids_vec.end(), all_input_ids.begin() + i * seq_len);
-        std::copy(attention_mask_vec.begin(), attention_mask_vec.end(), all_attention_masks.begin() + i * seq_len);
+        tokenizer_->encode_pair(query, doc.content, max_seq_len_, input_ids_vec, attention_mask_vec);
+        all_input_ids.insert(all_input_ids.end(), input_ids_vec.begin(), input_ids_vec.end());
+        all_attention_masks.insert(all_attention_masks.end(), attention_mask_vec.begin(), attention_mask_vec.end());
     }
 
-    // Copy to GPU
-    CUDA_CHECK(cudaMemcpy(d_input_ids_, all_input_ids.data(), input_size * sizeof(int64_t), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_attention_mask_, all_attention_masks.data(), input_size * sizeof(int64_t), cudaMemcpyHostToDevice));
+    // --- MODIFIED: Efficiently copy data to pre-allocated tensors ---
 
-    // Create input tensors
-    std::vector<int64_t> input_shape = {static_cast<int64_t>(current_batch_size), seq_len};
-    std::vector<Ort::Value> input_tensors;
-    input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(
-        memory_info_device_, d_input_ids_, input_size, input_shape.data(), input_shape.size()));
-    input_tensors.push_back(Ort::Value::CreateTensor<int64_t>(
-        memory_info_device_, d_attention_mask_, input_size, input_shape.data(), input_shape.size()));
+    // 1. Create temporary CPU tensors that POINT to the vector data (no copy)
+    auto cpu_options = torch::TensorOptions().dtype(torch::kLong);
+    torch::Tensor input_ids_cpu = torch::from_blob(all_input_ids.data(), {(long)current_batch_size, max_seq_len_}, cpu_options);
+    torch::Tensor attention_mask_cpu = torch::from_blob(all_attention_masks.data(), {(long)current_batch_size, max_seq_len_}, cpu_options);
 
-    // Create output tensor
-    std::vector<int64_t> output_shape = {static_cast<int64_t>(current_batch_size), static_cast<int64_t>(output_dim_)};
-    size_t output_size = current_batch_size * output_dim_;
-    std::vector<Ort::Value> output_tensors;
-    output_tensors.push_back(Ort::Value::CreateTensor<float>(
-        memory_info_device_, d_output_, output_size, output_shape.data(), output_shape.size()));
+    // 2. Use a slice of the pre-allocated GPU tensor for the current batch size
+    auto input_ids_view = input_ids_gpu_.slice(0, 0, current_batch_size);
+    auto attention_mask_view = attention_mask_gpu_.slice(0, 0, current_batch_size);
 
-    // Run inference
-    session_.Run(Ort::RunOptions{nullptr}, input_names_.data(), input_tensors.data(),
-                 input_tensors.size(), output_names_.data(), output_tensors.data(), output_tensors.size());
+    // 3. Perform an efficient copy from the CPU tensor to the GPU tensor's view
+    input_ids_view.copy_(input_ids_cpu);
+    attention_mask_view.copy_(attention_mask_cpu);
+    
+    // Prepare inputs for the model using the views
+    std::vector<torch::jit::IValue> inputs;
+    inputs.push_back(input_ids_view);
+    inputs.push_back(attention_mask_view);
 
-    // Copy results back
-    std::vector<float> cpu_logits(output_size);
-    CUDA_CHECK(cudaMemcpy(cpu_logits.data(), d_output_, output_size * sizeof(float), cudaMemcpyDeviceToHost));
+    at::Tensor output_tensor = module_.forward(inputs).toTensor();
+    
+    // ... rest of the function remains the same ...
+    output_tensor = output_tensor.to(torch::kCPU);
+    auto output_accessor = output_tensor.accessor<float, 2>();
 
-    std::vector<float> scores;
-    scores.reserve(current_batch_size);
-
-    if (output_dim_ == 2)
-    {
-        // Binary classification output
-        for (size_t i = 0; i < current_batch_size; ++i)
-        {
-            float not_relevant = cpu_logits[i * 2 + 0];
-            float relevant = cpu_logits[i * 2 + 1];
-            float exp_rel = std::exp(relevant);
-            float exp_not_rel = std::exp(not_relevant);
-            scores.push_back(exp_rel / (exp_rel + exp_not_rel));
-        }
+    std::vector<ScoredDocument> results;
+    results.reserve(current_batch_size);
+    for (size_t i = 0; i < current_batch_size; ++i) {
+        results.push_back({batch_docs[i].id, output_accessor[i][0]});
     }
-    else
-    {
-        // Single score output
-        for (size_t i = 0; i < current_batch_size; ++i)
-        {
-            scores.push_back(cpu_logits[i * output_dim_]);
-        }
-    }
-
-    return scores;
+    return results;
 }
 
 std::vector<ScoredDocument> GpuNeuralReranker::rerank_with_chunking(
     const std::string &query,
     const std::vector<Document> &candidates,
-    size_t chunk_size)
-{
-    // OPTIMIZATION: Simple truncation instead of expensive chunking
-    // This is much faster and chunking is unnecessary with pre-truncated docs
-    std::vector<Document> truncated_docs;
-    truncated_docs.reserve(candidates.size());
-    for (const auto &doc : candidates)
-    {
-        if (doc.content.length() <= chunk_size)
-        {
-            truncated_docs.push_back(doc);
-        }
-        else
-        {
-            std::string truncated = doc.content.substr(0, chunk_size);
-            truncated_docs.emplace_back(doc.id, truncated);
-        }
+    size_t chunk_size
+) {
+    if (candidates.empty()) return {};
+
+    std::vector<ScoredDocument> all_ranked_results;
+    all_ranked_results.reserve(candidates.size());
+
+    for (size_t i = 0; i < candidates.size(); i += batch_size_) {
+        size_t end_idx = std::min(i + batch_size_, candidates.size());
+        std::vector<Document> batch_docs(candidates.begin() + i, candidates.begin() + end_idx);
+        auto batch_results = rerank_batch(query, batch_docs);
+        all_ranked_results.insert(all_ranked_results.end(), batch_results.begin(), batch_results.end());
     }
 
-    return rerank(query, truncated_docs);
+    std::sort(all_ranked_results.begin(), all_ranked_results.end());
+    return all_ranked_results;
 }

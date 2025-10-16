@@ -43,3 +43,5 @@ models/*.onnx
 vendor/*.tgz
 vendor/*.tar.gz
 data/
+index/*.dat
+index/*/*.dat

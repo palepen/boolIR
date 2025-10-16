@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
     const std::string topics_path = "data/topics.cord19-trec-covid.txt";
     const std::string qrels_path = "data/qrels.cord19-trec-covid.txt";
     const std::string synonym_path = "data/synonyms.txt";
-    const std::string model_path = "models/bert_model.onnx";
+    const std::string model_path = "models/bert_model.pt";
     const std::string vocab_path = "models/vocab.txt";
     const std::string index_path = "index";
     const std::string temp_path = "index/temp";
@@ -163,19 +163,23 @@ int main(int argc, char **argv) {
                 std::cout << "  " << (i + 1) << ". DocID: " << candidates[i].doc_id << std::endl;
             }
 
-            // 2. Rerank the candidates
-            std::vector<Document> candidate_docs;
+            const size_t MAX_CANDIDATES_FOR_RERANK = 1000;
+            std::cout << "\n(Taking top " << MAX_CANDIDATES_FOR_RERANK << " candidates for reranking...)" << std::endl;
+
+            // 2. Rerank only the top N candidates
+            std::vector<Document> docs_to_rerank;
             if (!candidates.empty()) {
-                candidate_docs.reserve(candidates.size());
-                for (const auto &res : candidates) {
-                    const Document* doc_ptr = doc_store.get_document(res.doc_id);
+                size_t rerank_count = std::min(candidates.size(), MAX_CANDIDATES_FOR_RERANK);
+                docs_to_rerank.reserve(rerank_count);
+                for (size_t i = 0; i < rerank_count; ++i) {
+                    const Document* doc_ptr = doc_store.get_document(candidates[i].doc_id);
                     if (doc_ptr) {
-                         candidate_docs.emplace_back(res.doc_id, truncate_to_words(doc_ptr->content, 200));
+                         docs_to_rerank.emplace_back(candidates[i].doc_id, truncate_to_words(doc_ptr->content, 200));
                     }
                 }
             }
 
-            auto reranked = gpu_reranker.rerank_with_chunking(query, candidate_docs);
+            auto reranked = gpu_reranker.rerank_with_chunking(query, docs_to_rerank);
             auto end_time = std::chrono::high_resolution_clock::now();
             double elapsed_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
