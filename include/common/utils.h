@@ -1,19 +1,25 @@
-#ifndef COMMON_TYPES_H
-#define COMMON_TYPES_H
+#ifndef COMMON_UTILS_H
+#define COMMON_UTILS_H
+
+#include <string>
+#include <sstream>
+#include <cstddef>
+
+// Truncates a string to a maximum number of words.
+std::string truncate_to_words(const std::string &text, size_t max_words);
 
 struct SearchResult {
     unsigned int doc_id;
     float score;
 
-    // For sorting results in descending order of score
     bool operator<(const SearchResult& other) const {
         return score > other.score;
     }
 
-    // Default constructor (needed for vector resize)
     SearchResult() : doc_id(0), score(0.0f) {}
     
     SearchResult(unsigned int doc_id, float score) : doc_id(doc_id), score(score) {}
 };
 
-#endif
+
+#endif 

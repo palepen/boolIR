@@ -11,8 +11,9 @@ QueryPreprocessor::QueryPreprocessor() {
 
 void QueryPreprocessor::initialize_default_stop_words() {
     // Common English stop words
+    // MODIFIED: "and" has been REMOVED from this list to allow boolean parsing
     std::vector<std::string> default_stops = {
-        "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+        "a", "an", "are", "as", "at", "be", "by", "for", "from",
         "has", "he", "in", "is", "it", "its", "of", "on", "that", "the",
         "to", "was", "will", "with", "what", "when", "where", "who", "how",
         "which", "this", "these", "those", "can", "could", "do", "does",
@@ -40,7 +41,11 @@ void QueryPreprocessor::load_stop_words(const std::string& filepath) {
         word.erase(0, word.find_first_not_of(" \t\n\r\f\v"));
         word.erase(word.find_last_not_of(" \t\n\r\f\v") + 1);
         if (!word.empty() && word[0] != '#') {
-            stop_words_.insert(to_lowercase(word));
+            // Also ensure "and" is not added if it's in a custom file
+            std::string lower_word = to_lowercase(word);
+            if (lower_word != "and" && lower_word != "or" && lower_word != "not") {
+                 stop_words_.insert(lower_word);
+            }
         }
     }
     
@@ -60,10 +65,11 @@ std::string QueryPreprocessor::remove_punctuation(const std::string& text) const
     result.reserve(text.length());
     
     for (char c : text) {
-        if (std::isalnum(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c))) {
+        // Allow parentheses for grouping
+        if (std::isalnum(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)) || c == '(' || c == ')') {
             result += c;
         } else {
-            result += ' ';  // Replace punctuation with space
+            result += ' ';  // Replace other punctuation with space
         }
     }
     return result;
@@ -100,7 +106,7 @@ std::string QueryPreprocessor::preprocess(const std::string& query) const {
     // Step 1: Convert to lowercase
     std::string processed = to_lowercase(query);
     
-    // Step 2: Remove punctuation
+    // Step 2: Remove punctuation (but keep parentheses)
     processed = remove_punctuation(processed);
     
     // Step 3: Tokenize

@@ -6,43 +6,31 @@
 #include <cctype>
 #include <algorithm>
 
-// Helper function to normalize text by lowercasing and removing punctuation
-static std::string normalize_text(const std::string& text) {
-    std::stringstream ss(text);
-    std::stringstream result;
-    std::string word;
-    bool first = true;
-    
-    while (ss >> word) {
-        // Remove punctuation
-        word.erase(std::remove_if(word.begin(), word.end(), 
-            [](unsigned char c) { return !std::isalnum(c); }), word.end());
-        
-        if (!word.empty()) {
-            if (!first) result << " ";
-            // Only convert to lower case, no stemming
-            std::transform(word.begin(), word.end(), word.begin(),
-                           [](unsigned char c){ return std::tolower(c); });
-            result << word;
-            first = false;
-        }
-    }
-    return result.str();
-}
-
-std::pair<DocumentCollection, DocNameToIdMap> load_trec_documents(const std::string &corpus_dir)
+DocumentLoadResult load_trec_documents(const std::string &corpus_dir)
 {
-    DocumentCollection documents;
-    DocNameToIdMap doc_name_to_id;
+    DocumentLoadResult result;
     unsigned int id_counter = 0;
 
     std::cout << "Loading TREC documents from: " << corpus_dir << std::endl;
 
-    for (const auto &entry : fs::recursive_directory_iterator(corpus_dir))
+    if (!fs::exists(corpus_dir) || !fs::is_directory(corpus_dir))
     {
-        if (entry.is_regular_file())
+        std::cerr << "Error: Corpus directory does not exist: " << corpus_dir << std::endl;
+        return result;
+    }
+
+    // Create preprocessor once for all documents
+    QueryPreprocessor preprocessor;
+    
+    // Iterate through all .txt files in the corpus directory
+    for (const auto &entry : fs::directory_iterator(corpus_dir))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".txt")
         {
-            std::cout << "Processing file: " << entry.path().string() << std::endl;
+            // Extract document name from filename (without .txt extension)
+            std::string doc_name = entry.path().stem().string();
+
+            // Read the entire file content
             std::ifstream ifs(entry.path().string());
             if (!ifs)
             {
@@ -50,72 +38,53 @@ std::pair<DocumentCollection, DocNameToIdMap> load_trec_documents(const std::str
                 continue;
             }
 
-            std::string line;
-            std::string current_content;
-            std::string current_docno;
-            bool in_doc = false;
-            bool in_text = false;
-
-            while (std::getline(ifs, line))
-            {
-                line.erase(0, line.find_first_not_of(" \t\n\r\f\v"));
-                line.erase(line.find_last_not_of(" \t\n\r\f\v") + 1);
-
-                if (line == "<DOC>")
-                {
-                    in_doc = true;
-                    current_content.clear();
-                    current_docno.clear();
-                }
-                else if (line == "</DOC>")
-                {
-                    if (in_doc && !current_docno.empty() && !current_content.empty())
-                    {
-                        // Normalize the content (lowercase, remove punctuation)
-                        current_content = normalize_text(current_content);
-                        
-                        current_content.erase(0, current_content.find_first_not_of(" \t\n\r\f\v"));
-                        current_content.erase(current_content.find_last_not_of(" \t\n\r\f\v") + 1);
-                        
-                        documents.push_back(Document{id_counter, current_content});
-                        doc_name_to_id[current_docno] = id_counter++;
-                    }
-                    in_doc = false;
-                    in_text = false;
-                }
-                else if (in_doc)
-                {
-                    if (line.find("<DOCNO>") == 0)
-                    {
-                        size_t start = 7;
-                        size_t end = line.find("</DOCNO>");
-                        if (end != std::string::npos)
-                        {
-                            current_docno = line.substr(start, end - start);
-                            current_docno.erase(0, current_docno.find_first_not_of(" \t\n\r\f\v"));
-                            current_docno.erase(current_docno.find_last_not_of(" \t\n\r\f\v") + 1);
-                        }
-                    }
-                    else if (line == "<TEXT>")
-                    {
-                        in_text = true;
-                    }
-                    else if (line == "</TEXT>")
-                    {
-                        in_text = false;
-                    }
-                    else if (in_text && !line.empty())
-                    {
-                        current_content += line + " ";
-                    }
-                }
-            }
+            // Read all content into a string
+            std::stringstream buffer;
+            buffer << ifs.rdbuf();
+            std::string content = buffer.str();
             ifs.close();
+
+            // Skip empty documents
+            if (content.empty())
+            {
+                continue;
+            }
+
+            // Apply consistent preprocessing (lowercase, remove punctuation, remove stop words)
+            content = preprocessor.preprocess(content);
+            
+            // Trim whitespace
+            content.erase(0, content.find_first_not_of(" \t\n\r\f\v"));
+            content.erase(content.find_last_not_of(" \t\n\r\f\v") + 1);
+
+            // Skip if preprocessing resulted in empty content
+            if (content.empty())
+            {
+                continue;
+            }
+
+            // Create document with internal ID
+            result.documents.push_back(Document{id_counter, content});
+
+            // Store both mappings
+            result.doc_name_to_id[doc_name] = id_counter;
+            result.id_to_doc_name[id_counter] = doc_name;
+
+            id_counter++;
+
+            // Progress indicator every 10,000 documents
+            if (id_counter % 10000 == 0)
+            {
+                std::cout << "  Loaded " << id_counter << " documents..." << std::endl;
+            }
         }
     }
 
-    std::cout << "Loaded " << documents.size() << " documents" << std::endl;
-    return {documents, doc_name_to_id};
+    std::cout << "Loaded " << result.documents.size() << " documents" << std::endl;
+    std::cout << "  Forward mapping size: " << result.doc_name_to_id.size() << std::endl;
+    std::cout << "  Reverse mapping size: " << result.id_to_doc_name.size() << std::endl;
+
+    return result;
 }
 
 Qrels load_trec_qrels(const std::string &qrels_path, const DocNameToIdMap &doc_name_to_id)
@@ -130,6 +99,8 @@ Qrels load_trec_qrels(const std::string &qrels_path, const DocNameToIdMap &doc_n
 
     std::string line;
     size_t relevant_count = 0;
+    size_t missing_docs = 0;
+
     while (std::getline(ifs, line))
     {
         std::stringstream ss(line);
@@ -145,6 +116,10 @@ Qrels load_trec_qrels(const std::string &qrels_path, const DocNameToIdMap &doc_n
                     qrels[query_id].insert(it->second);
                     relevant_count++;
                 }
+                else
+                {
+                    missing_docs++;
+                }
             }
         }
         else
@@ -154,7 +129,13 @@ Qrels load_trec_qrels(const std::string &qrels_path, const DocNameToIdMap &doc_n
     }
     ifs.close();
 
-    std::cout << "Loaded qrels for " << qrels.size() << " queries (" << relevant_count << " relevant judgments)" << std::endl;
+    std::cout << "Loaded qrels for " << qrels.size() << " queries" << std::endl;
+    std::cout << "  Relevant judgments: " << relevant_count << std::endl;
+    if (missing_docs > 0)
+    {
+        std::cout << "  Warning: " << missing_docs << " referenced documents not found in corpus" << std::endl;
+    }
+
     return qrels;
 }
 
@@ -178,6 +159,7 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
 
     while (std::getline(ifs, line))
     {
+        // Trim line
         line.erase(0, line.find_first_not_of(" \t\n\r\f\v"));
         line.erase(line.find_last_not_of(" \t\n\r\f\v") + 1);
 
@@ -193,14 +175,15 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
             {
                 // Apply query preprocessing for consistency with document preprocessing
                 std::string preprocessed_title = preprocessor.preprocess(current_title);
-                
-                if (!preprocessed_title.empty()) {
+
+                if (!preprocessed_title.empty())
+                {
                     topics[current_id] = preprocessed_title;
-                    std::cout << "DEBUG: Loaded query ID='" << current_id 
-                              << "' original='" << current_title 
-                              << "' preprocessed='" << preprocessed_title << "'" << std::endl;
-                } else {
-                    std::cerr << "Warning: Query " << current_id << " became empty after preprocessing" << std::endl;
+                }
+                else
+                {
+                    std::cerr << "Warning: Query " << current_id 
+                              << " became empty after preprocessing" << std::endl;
                     // Fallback to basic lowercase if preprocessing removes everything
                     std::string fallback = current_title;
                     std::transform(fallback.begin(), fallback.end(), fallback.begin(),
@@ -216,21 +199,24 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
             {
                 size_t num_start = line.find("<num>");
                 size_t content_start = num_start + 5;
-                
+
                 std::string num_content = line.substr(content_start);
-                
+
+                // Remove "Number:" prefix if present
                 size_t colon_pos = num_content.find(':');
                 if (colon_pos != std::string::npos)
                 {
                     num_content = num_content.substr(colon_pos + 1);
                 }
-                
+
+                // Remove closing tag if present
                 size_t close_tag = num_content.find("</num>");
                 if (close_tag != std::string::npos)
                 {
                     num_content = num_content.substr(0, close_tag);
                 }
-                
+
+                // Trim whitespace
                 num_content.erase(0, num_content.find_first_not_of(" \t\n\r\f\v"));
                 num_content.erase(num_content.find_last_not_of(" \t\n\r\f\v") + 1);
                 current_id = num_content;
@@ -239,15 +225,17 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
             {
                 size_t title_start = line.find("<title>");
                 size_t content_start = title_start + 7;
-                
+
                 std::string title_content = line.substr(content_start);
-                
+
+                // Remove closing tag if present
                 size_t close_tag = title_content.find("</title>");
                 if (close_tag != std::string::npos)
                 {
                     title_content = title_content.substr(0, close_tag);
                 }
-                
+
+                // Trim whitespace
                 title_content.erase(0, title_content.find_first_not_of(" \t\n\r\f\v"));
                 title_content.erase(title_content.find_last_not_of(" \t\n\r\f\v") + 1);
                 current_title = title_content;

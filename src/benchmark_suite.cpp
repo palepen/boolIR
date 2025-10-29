@@ -1,6 +1,8 @@
 #include "benchmark_suite.h"
 #include "system_controller.h"
 #include "reranking/neural_reranker.h"
+#include "config.h"
+#include "common/utils.h"
 #include <iostream>
 #include <chrono>
 #include <iomanip>
@@ -11,19 +13,6 @@
 #include <cilk/cilk_stub.h>
 #include <filesystem>
 #include <sstream>
-
-// Helper to truncate document content for the reranker
-static std::string truncate_to_words(const std::string &text, size_t max_words)
-{
-    std::istringstream iss(text);
-    std::ostringstream oss;
-    std::string word;
-    for (size_t count = 0; count < max_words && iss >> word; ++count)
-    {
-        oss << (count > 0 ? " " : "") << word;
-    }
-    return oss.str();
-}
 
 BenchmarkSuite::BenchmarkSuite(
     const DocumentStore &doc_store,
@@ -89,36 +78,33 @@ void BenchmarkSuite::run_integrated_benchmark(const BenchmarkConfig &config)
     bool_results.effectiveness = evaluator.evaluate(bool_map);
     bool_results.throughput_queries_per_sec = (topics_.size() * 1000.0) / bool_results.query_processing_time_ms;
     calculate_statistics(bool_results);
-    export_to_csv(bool_results, "results/all_benchmarks.csv");
+    export_to_csv(bool_results, Config::RESULTS_CSV_PATH);
     std::cout << "  -> Boolean Stage Complete. Throughput: " << std::fixed << std::setprecision(2) << bool_results.throughput_queries_per_sec << " q/s" << std::endl;
 
     // --- STAGE 2: NEURAL RERANKING (TIMED) ---
     std::cout << "\n--- Stage 2: Executing Neural Reranking ---" << std::endl;
-    GpuNeuralReranker gpu_reranker(model_path_.c_str(), vocab_path_.c_str());
+    GpuNeuralReranker gpu_reranker(model_path_.c_str(), vocab_path_.c_str(), Config::BATCH_SIZE);
 
     auto start_rerank_phase = std::chrono::high_resolution_clock::now();
     std::vector<std::pair<std::string, std::vector<SearchResult>>> reranked_results_vec(queries.size());
     const auto &doc_map = doc_store_.get_all();
 
-    const size_t MAX_CANDIDATES_FOR_RERANK = 2000;
-    std::cout << "\n(Taking top " << MAX_CANDIDATES_FOR_RERANK << " candidates for reranking...)" << std::endl;
+    std::cout << "\n(Taking top " << Config::MAX_RERANK_CANDIDATES << " candidates for reranking...)" << std::endl;
 
-    
     cilk_for(size_t i = 0; i < queries.size(); ++i)
     {
         const auto &[qid, qtext] = queries[i];
         const auto &candidates = boolean_results_vec[i].second;
 
         std::vector<Document> candidate_docs;
-        size_t rerank_count = std::min(candidates.size(), MAX_CANDIDATES_FOR_RERANK);
+        size_t rerank_count = std::min(candidates.size(), Config::MAX_RERANK_CANDIDATES);
         candidate_docs.reserve(rerank_count);
         for (size_t k = 0; k < rerank_count; k++)
         {
             auto it = doc_map.find(candidates[k].doc_id);
             if (it != doc_map.end())
             {
-                candidate_docs.emplace_back(candidates[k].doc_id, truncate_to_words(it->second.content, 256));
-                
+                candidate_docs.emplace_back(candidates[k].doc_id, truncate_to_words(it->second.content, Config::DOCUMENT_TRUNCATE_WORDS));
             }
         }
 
@@ -150,7 +136,7 @@ void BenchmarkSuite::run_integrated_benchmark(const BenchmarkConfig &config)
     rerank_results.effectiveness = evaluator.evaluate(rerank_map);
     rerank_results.throughput_queries_per_sec = (topics_.size() * 1000.0) / rerank_results.query_processing_time_ms;
     calculate_statistics(rerank_results);
-    export_to_csv(rerank_results, "results/all_benchmarks.csv");
+    export_to_csv(bool_results, Config::RESULTS_CSV_PATH);
     std::cout << "  -> Reranking Stage Complete. End-to-End Throughput: " << std::fixed << std::setprecision(2) << rerank_results.throughput_queries_per_sec << " q/s" << std::endl;
 
     print_comparison(bool_results, rerank_results);
@@ -219,7 +205,7 @@ void BenchmarkSuite::print_comparison(const BenchmarkResults &bool_res, const Be
 {
     std::cout << "\n"
               << std::string(80, '=') << std::endl;
-    std::cout << "DETAILED COMPARISON: Boolean vs Reranking ("
+    std::cout << "DETAILED COMPARISON: Boolean vs Reranking  ("
               << bool_res.config.num_cpu_workers << " CPU workers)" << std::endl;
     std::cout << std::string(80, '=') << std::endl;
 

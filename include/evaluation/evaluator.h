@@ -5,7 +5,7 @@
 #include <unordered_set>
 #include <string>
 #include <vector>
-#include "common_types.h"
+#include "common/utils.h"
 
 // Relevance judgments: query_id -> set of relevant doc_ids
 using Qrels = std::unordered_map<std::string, std::unordered_set<unsigned int>>;
@@ -15,8 +15,8 @@ struct EvaluationResults {
     double precision_at_10;
     double mean_average_precision;
     double mean_reciprocal_rank;
-    double ndcg_at_10;  // Normalized Discounted Cumulative Gain
-    double dcg_at_10;   // Discounted Cumulative Gain
+    double ndcg_at_10;  
+    double dcg_at_10;  
 };
 
 class Evaluator {
