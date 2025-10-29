@@ -45,3 +45,6 @@ vendor/*.tar.gz
 data/
 index/*.dat
 index/*/*.dat
+index_test/*
+results/
+!data/synonyms.txt

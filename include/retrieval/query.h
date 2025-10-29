@@ -14,7 +14,7 @@ enum class QueryOperator {
 
 struct QueryNode {
     QueryOperator op;
-    std::string term; // only if op is TERM
+    std::string term;
     std::vector<std::unique_ptr<QueryNode>> children;
 
     QueryNode(const std::string &t) : op(QueryOperator::TERM), term(t) {}

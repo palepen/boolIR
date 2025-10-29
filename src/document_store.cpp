@@ -16,6 +16,7 @@ DocumentStore::DocumentStore(const std::string& index_path) {
     std::cout << "Loading document names from: " << doc_names_path << std::endl;
     load_document_names(doc_names_path);
     std::cout << "  Loaded " << id_to_doc_name_.size() << " document names" << std::endl;
+    std::cout << "  Built reverse mapping: " << doc_name_to_id_.size() << " entries" << std::endl;
 }
 
 void DocumentStore::load_documents(const std::string& doc_store_path, 
@@ -83,7 +84,9 @@ void DocumentStore::load_document_names(const std::string& doc_names_path) {
         std::string doc_name(name_length, '\0');
         if (!names_file.read(&doc_name[0], name_length)) break;
         
+        // FIXED: Build BOTH mappings
         id_to_doc_name_[doc_id] = doc_name;
+        doc_name_to_id_[doc_name] = doc_id;  // <-- THIS WAS MISSING!
     }
     
     names_file.close();

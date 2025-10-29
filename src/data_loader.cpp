@@ -6,37 +6,6 @@
 #include <cctype>
 #include <algorithm>
 
-// Helper function to normalize text by lowercasing and removing punctuation
-static std::string normalize_text(const std::string &text)
-{
-    std::stringstream ss(text);
-    std::stringstream result;
-    std::string word;
-    bool first = true;
-
-    while (ss >> word)
-    {
-        // Remove punctuation
-        word.erase(std::remove_if(word.begin(), word.end(),
-                                  [](unsigned char c)
-                                  { return !std::isalnum(c); }),
-                   word.end());
-
-        if (!word.empty())
-        {
-            if (!first)
-                result << " ";
-            // Only convert to lower case, no stemming
-            std::transform(word.begin(), word.end(), word.begin(),
-                           [](unsigned char c)
-                           { return std::tolower(c); });
-            result << word;
-            first = false;
-        }
-    }
-    return result.str();
-}
-
 DocumentLoadResult load_trec_documents(const std::string &corpus_dir)
 {
     DocumentLoadResult result;
@@ -50,6 +19,9 @@ DocumentLoadResult load_trec_documents(const std::string &corpus_dir)
         return result;
     }
 
+    // Create preprocessor once for all documents
+    QueryPreprocessor preprocessor;
+    
     // Iterate through all .txt files in the corpus directory
     for (const auto &entry : fs::directory_iterator(corpus_dir))
     {
@@ -78,13 +50,14 @@ DocumentLoadResult load_trec_documents(const std::string &corpus_dir)
                 continue;
             }
 
-            // Normalize the content (lowercase, remove punctuation)
-            content = normalize_text(content);
-
+            // Apply consistent preprocessing (lowercase, remove punctuation, remove stop words)
+            content = preprocessor.preprocess(content);
+            
             // Trim whitespace
             content.erase(0, content.find_first_not_of(" \t\n\r\f\v"));
             content.erase(content.find_last_not_of(" \t\n\r\f\v") + 1);
 
+            // Skip if preprocessing resulted in empty content
             if (content.empty())
             {
                 continue;
@@ -186,6 +159,7 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
 
     while (std::getline(ifs, line))
     {
+        // Trim line
         line.erase(0, line.find_first_not_of(" \t\n\r\f\v"));
         line.erase(line.find_last_not_of(" \t\n\r\f\v") + 1);
 
@@ -208,12 +182,12 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
                 }
                 else
                 {
-                    std::cerr << "Warning: Query " << current_id << " became empty after preprocessing" << std::endl;
+                    std::cerr << "Warning: Query " << current_id 
+                              << " became empty after preprocessing" << std::endl;
                     // Fallback to basic lowercase if preprocessing removes everything
                     std::string fallback = current_title;
                     std::transform(fallback.begin(), fallback.end(), fallback.begin(),
-                                   [](unsigned char c)
-                                   { return std::tolower(c); });
+                                   [](unsigned char c) { return std::tolower(c); });
                     topics[current_id] = fallback;
                 }
             }
@@ -228,18 +202,21 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
 
                 std::string num_content = line.substr(content_start);
 
+                // Remove "Number:" prefix if present
                 size_t colon_pos = num_content.find(':');
                 if (colon_pos != std::string::npos)
                 {
                     num_content = num_content.substr(colon_pos + 1);
                 }
 
+                // Remove closing tag if present
                 size_t close_tag = num_content.find("</num>");
                 if (close_tag != std::string::npos)
                 {
                     num_content = num_content.substr(0, close_tag);
                 }
 
+                // Trim whitespace
                 num_content.erase(0, num_content.find_first_not_of(" \t\n\r\f\v"));
                 num_content.erase(num_content.find_last_not_of(" \t\n\r\f\v") + 1);
                 current_id = num_content;
@@ -251,12 +228,14 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
 
                 std::string title_content = line.substr(content_start);
 
+                // Remove closing tag if present
                 size_t close_tag = title_content.find("</title>");
                 if (close_tag != std::string::npos)
                 {
                     title_content = title_content.substr(0, close_tag);
                 }
 
+                // Trim whitespace
                 title_content.erase(0, title_content.find_first_not_of(" \t\n\r\f\v"));
                 title_content.erase(title_content.find_last_not_of(" \t\n\r\f\v") + 1);
                 current_title = title_content;

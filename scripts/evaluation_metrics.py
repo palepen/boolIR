@@ -5,6 +5,10 @@ import numpy as np
 from pathlib import Path
 import argparse
 
+
+DEFAULT_CSV_PATH = "results/all_benchmarks.csv"
+DEFAULT_PLOTS_DIR = "results/plots"
+
 # Set a professional style for the plots
 sns.set_style("whitegrid")
 plt.rcParams.update({
@@ -153,8 +157,10 @@ def generate_summary_report(df, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(description='Generate IR benchmark visualizations from a consolidated CSV file.')
-    parser.add_argument('--results', required=True, help='Path to the consolidated results CSV file (e.g., all_benchmarks.csv)')
-    parser.add_argument('--output-dir', default='results/plots', help='Directory to save plots and reports')
+    parser.add_argument('--results', required=False, default=DEFAULT_CSV_PATH,
+                        help=f'Path to the consolidated results CSV file (default: {DEFAULT_CSV_PATH})')
+    parser.add_argument('--output-dir', default=DEFAULT_PLOTS_DIR, 
+                        help=f'Directory to save plots and reports (default: {DEFAULT_PLOTS_DIR})')
     args = parser.parse_args()
     
     output_dir = Path(args.output_dir)

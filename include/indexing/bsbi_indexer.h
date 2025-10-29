@@ -3,7 +3,7 @@
 
 #include "indexing/document.h"
 #include "indexing/performance_monitor.h"
-#include "data_loader.h"  // For IdToDocNameMap
+#include "data_loader.h" 
 #include <string>
 #include <vector>
 #include <mutex>

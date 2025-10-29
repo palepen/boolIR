@@ -13,11 +13,11 @@ using DocNameToIdMap = std::unordered_map<std::string, unsigned int>;
 
 using IdToDocNameMap = std::unordered_map<unsigned int, std::string>;
 
-
-struct DocumentLoadResult {
+struct DocumentLoadResult
+{
     DocumentCollection documents;
-    DocNameToIdMap doc_name_to_id;    // "ug7v899j" -> 0
-    IdToDocNameMap id_to_doc_name;    // 0 -> "ug7v899j"
+    DocNameToIdMap doc_name_to_id; // "ug7v899j" -> 0
+    IdToDocNameMap id_to_doc_name; // 0 -> "ug7v899j"
 };
 
 // Updated function declarations
