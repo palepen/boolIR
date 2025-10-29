@@ -27,11 +27,11 @@ public:
     ResultSet execute_query(const QueryNode &query);
 
 private:
-    ResultSet execute_node(const QueryNode &node, std::unordered_map<std::string, ResultSet> &postings_cache);
+    ResultSet execute_node(const QueryNode &node, std::unordered_map<std::string, ResultSet> &postings_cache, const ResultSet &context_set);
 
     std::vector<ShardIndex> shards_;
     std::mutex cache_mutex_;
-
+    ResultSet get_universe(const std::unordered_map<std::string, ResultSet> &postings_cache);
     ResultSet intersect_sets(const ResultSet &a, const ResultSet &b);
     ResultSet union_sets(const ResultSet &a, const ResultSet &b);
     ResultSet differ_sets(const ResultSet &a, const ResultSet &b);

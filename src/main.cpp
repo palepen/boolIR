@@ -149,7 +149,7 @@ int main(int argc, char **argv)
         }
 
         HighPerformanceIRSystem system(Config::INDEX_PATH, Config::SYNONYM_PATH, num_shards);
-        GpuNeuralReranker gpu_reranker(Config::MODEL_PATH.c_str(), Config::VOCAB_PATH.c_str());
+        GpuNeuralReranker gpu_reranker(Config::MODEL_PATH.c_str(), Config::VOCAB_PATH.c_str(), Config::BATCH_SIZE);
         DocumentStore doc_store(Config::INDEX_PATH);
 
         std::string query;
@@ -176,7 +176,7 @@ int main(int argc, char **argv)
                 const std::string *doc_name = doc_store.get_document_name(candidates[i].doc_id);
                 if (doc_name)
                 {
-                    std::cout << "  " << (i + 1) << ". Document: " << *doc_name << ".txt"
+                    std::cout << "  " << (i + 1) << ". Document: " << "./"  << Config::CORPUS_DIR << "/" << *doc_name << ".txt"
                               << " (ID: " << candidates[i].doc_id << ")" << std::endl;
                 }
                 else
@@ -217,7 +217,7 @@ int main(int argc, char **argv)
                 const std::string *doc_name = doc_store.get_document_name(reranked[i].id);
                 if (doc_name)
                 {
-                    std::cout << "  " << (i + 1) << ". Document: " << *doc_name << ".txt"
+                    std::cout << "  " << (i + 1) << ". Document: " << "./" << Config::CORPUS_DIR << "/" << *doc_name << ".txt"
                               << " (ID: " << reranked[i].id
                               << ", Score: " << std::fixed << std::setprecision(4)
                               << reranked[i].score << ")" << std::endl;

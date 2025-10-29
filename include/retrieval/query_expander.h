@@ -9,7 +9,8 @@
 
 /**
  * Transforms a simple user query string into a complex boolean query tree
- * by expanding keywords with a predefined set of synonyms loaded from a file.
+ * by parsing boolean operators (AND, OR, NOT) and expanding keywords
+ * with a predefined set of synonyms loaded from a file.
  */
 class QueryExpander {
 public:
@@ -35,6 +36,35 @@ private:
 
     // The in-memory map to store the loaded synonyms.
     std::unordered_map<std::string, std::vector<std::string>> synonym_map_;
+
+    // --- Parser Internals ---
+    std::vector<std::string> tokens_;
+    size_t current_token_index_;
+
+    /**
+     * @brief Creates an OR-node for a term and all its synonyms.
+     */
+    std::unique_ptr<QueryNode> create_synonym_node(const std::string& term);
+
+    /**
+     * @brief Parses an expression (handles OR, lowest precedence).
+     */
+    std::unique_ptr<QueryNode> parse_expression();
+
+    /**
+     * @brief Parses a term (handles AND / implicit AND, middle precedence).
+     */
+    std::unique_ptr<QueryNode> parse_term();
+
+    /**
+     * @brief Parses a factor (handles NOT, parentheses, and TERM, highest precedence).
+     */
+    std::unique_ptr<QueryNode> parse_factor();
+
+    // --- Parser Utility Methods ---
+    bool is_at_end() const;
+    std::string peek() const;
+    std::string consume();
 };
 
 #endif // QUERY_EXPANDER_H

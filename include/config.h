@@ -29,11 +29,12 @@ namespace Config
     constexpr size_t DEFAULT_BLOCK_SIZE_MB = 256;
 
     // --- Reranking Hyperparameters ---
-    constexpr size_t MAX_RERANK_CANDIDATES = 1024;
+    constexpr size_t MAX_RERANK_CANDIDATES = 4096;
     constexpr int64_t MAX_SEQ_LEN = 512;
     constexpr size_t DOCUMENT_TRUNCATE_WORDS = 256;
     constexpr size_t DEFAULT_RERANK_BATCH_SIZE = 128;
     constexpr size_t GPU_CHUNK_SIZE = 256;
+    constexpr size_t BATCH_SIZE = 128;
 
     const std::string DEFAULT_HF_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2";
 

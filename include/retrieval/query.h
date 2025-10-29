@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <sstream>
 
 enum class QueryOperator {
     TERM,
@@ -20,5 +21,29 @@ struct QueryNode {
     QueryNode(const std::string &t) : op(QueryOperator::TERM), term(t) {}
 
     QueryNode(QueryOperator o) : op(o) {}
+
+    void to_string(std::stringstream& ss, int indent = 0) const {
+        ss << std::string(indent * 2, ' '); // Add indentation
+
+        switch (op) {
+            case QueryOperator::TERM:
+                ss << "TERM(\"" << term << "\")\n";
+                break;
+            case QueryOperator::AND:
+                ss << "AND\n";
+                break;
+            case QueryOperator::OR:
+                ss << "OR\n";
+                break;
+            case QueryOperator::NOT:
+                ss << "NOT\n";
+                break;
+        }
+
+        // Recursively print children
+        for (const auto& child : children) {
+            child->to_string(ss, indent + 1);
+        }
+    }
 };
 #endif

@@ -83,7 +83,7 @@ void BenchmarkSuite::run_integrated_benchmark(const BenchmarkConfig &config)
 
     // --- STAGE 2: NEURAL RERANKING (TIMED) ---
     std::cout << "\n--- Stage 2: Executing Neural Reranking ---" << std::endl;
-    GpuNeuralReranker gpu_reranker(model_path_.c_str(), vocab_path_.c_str());
+    GpuNeuralReranker gpu_reranker(model_path_.c_str(), vocab_path_.c_str(), Config::BATCH_SIZE);
 
     auto start_rerank_phase = std::chrono::high_resolution_clock::now();
     std::vector<std::pair<std::string, std::vector<SearchResult>>> reranked_results_vec(queries.size());

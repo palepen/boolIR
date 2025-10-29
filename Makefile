@@ -11,7 +11,8 @@ CXXFLAGS = -std=c++17 -fopencilk -O3 -pthread \
            -Iinclude \
            -I$(LIBTORCH_PATH)/include \
            -I$(LIBTORCH_PATH)/include/torch/csrc/api/include \
-           -I$(CUDA_INCLUDE_PATH)
+           -I$(CUDA_INCLUDE_PATH) \
+		   -MMD -MP
 
 LDFLAGS = -L$(OPENCILK_PATH)/lib \
           -L$(LIBTORCH_PATH)/lib \
@@ -48,7 +49,7 @@ INDEX_SRCS = $(SRC_DIR)/indexing/bsbi_indexer.cpp \
              $(SRC_DIR)/indexing/performance_monitor.cpp
 
 RETRIEVAL_SRCS = $(SRC_DIR)/retrieval/retrieval_set.cpp \
-                 $(SRC_DIR)/retrieval/dynamic_retriever.cpp \
+                 $(SRC_DIR)/retrieval/retriever.cpp \
        			 $(SRC_DIR)/retrieval/query_expander.cpp \
                  $(SRC_DIR)/retrieval/query_preprocessor.cpp
 
@@ -58,6 +59,8 @@ EVAL_SRCS = $(SRC_DIR)/evaluation/evaluator.cpp
 
 ALL_SRCS = $(CORE_SRCS) $(COMMON_SRCS) $(INDEX_SRCS) $(RETRIEVAL_SRCS) $(RERANK_SRCS) $(TOKEN_SRCS) $(EVAL_SRCS) 
 ALL_OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(ALL_SRCS))
+
+DEPS = $(ALL_OBJS:.o=.d)
 
 .PHONY: all clean model dirs index run benchmark benchmark-indexing plot
 
@@ -119,3 +122,5 @@ clean:
 	@echo "Cleaning build artifacts"
 	@rm -rf build
 	@echo "Clean complete."
+
+-include $(DEPS)
