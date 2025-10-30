@@ -53,7 +53,6 @@ public:
         const std::string &index_path,
         const std::string &synonym_path);
 
-    // The new, primary function for running benchmarks
     void run_integrated_benchmark(const BenchmarkConfig &config);
 
 private:

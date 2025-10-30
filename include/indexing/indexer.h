@@ -20,9 +20,8 @@ struct TermDocPair {
 };
 
 /**
- * Streaming BSBI Indexer - Memory-Efficient Version
+ * Indexer 
  * 
- * Key improvements over original:
  * - Documents are streamed from disk, not loaded into RAM
  * - Uses memory-mapped files for efficient I/O
  * - Memory usage = num_workers × block_size_bytes (constant, independent of corpus size)
@@ -100,4 +99,4 @@ private:
     std::mutex vector_mutex_;  // For thread-safe run file list updates
 };
 
-#endif // INDEXER_H
+#endif 

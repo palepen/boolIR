@@ -20,8 +20,6 @@ struct DocumentLoadResult
     IdToDocNameMap id_to_doc_name; // 0 -> "ug7v899j"
 };
 
-// Updated function declarations
-DocumentLoadResult load_trec_documents(const std::string &corpus_dir);
 Qrels load_trec_qrels(const std::string &qrels_path, const DocNameToIdMap &doc_name_to_id);
 std::unordered_map<std::string, std::string> load_trec_topics(const std::string &topics_path);
 

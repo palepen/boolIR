@@ -49,7 +49,7 @@ ParallelRetriever::ParallelRetriever(const std::string &index_path, size_t num_s
 
 ResultSet ParallelRetriever::execute_query(const QueryNode &query)
 {
-    // Step 1: Traverse the query tree to find all unique terms needed
+    // Traverse the query tree to find all unique terms needed
     std::vector<std::string> unique_terms;
     std::vector<const QueryNode *> node_stack;
     node_stack.push_back(&query);
@@ -66,7 +66,7 @@ ResultSet ParallelRetriever::execute_query(const QueryNode &query)
     std::sort(unique_terms.begin(), unique_terms.end());
     unique_terms.erase(std::unique(unique_terms.begin(), unique_terms.end()), unique_terms.end());
 
-    // Step 2: Create a list of all retrieval tasks
+    // Create a list of all retrieval tasks
     std::vector<RetrievalTask> tasks;
     for (const auto &term : unique_terms)
     {
@@ -77,7 +77,7 @@ ResultSet ParallelRetriever::execute_query(const QueryNode &query)
         }
     }
 
-    // Step 3: Fetch all posting lists in parallel using the task list
+    // Fetch all posting lists in parallel using the task list
     std::unordered_map<std::string, ResultSet> postings_cache;
     cilk_for(size_t i = 0; i < tasks.size(); ++i)
     {
@@ -100,7 +100,6 @@ ResultSet ParallelRetriever::execute_query(const QueryNode &query)
         }
     }
 
-    // Step 4: Execute boolean logic recursively
     return execute_node(query, postings_cache, ResultSet{});
 }
 
@@ -108,32 +107,26 @@ ResultSet ParallelRetriever::execute_node(const QueryNode &node,
                                           std::unordered_map<std::string, ResultSet> &postings_cache,
                                           const ResultSet &context_set)
 {
-    // Handle TERM nodes
+
     if (node.op == QueryOperator::TERM)
     {
         auto it = postings_cache.find(node.term);
         return (it != postings_cache.end()) ? it->second : ResultSet{};
     }
 
-    // Handle empty children
     if (node.children.empty())
         return {};
 
-    // Handle NOT operator
     if (node.op == QueryOperator::NOT)
     {
-        // NOT requires exactly one child
         if (node.children.size() != 1)
         {
             std::cerr << "Warning: NOT operator requires exactly one child" << std::endl;
             return {};
         }
 
-        // Get the result set to negate
         ResultSet child_result = execute_node(*node.children[0], postings_cache, context_set);
 
-        // If context_set is empty, use universe (for standalone NOT or OR cases)
-        // Otherwise, subtract from context_set (for AND cases)
         if (context_set.doc_ids.empty())
         {
             ResultSet universe = get_universe(postings_cache);
@@ -145,7 +138,6 @@ ResultSet ParallelRetriever::execute_node(const QueryNode &node,
         }
     }
 
-    // Handle AND operator
     if (node.op == QueryOperator::AND)
     {
         ResultSet result;
@@ -154,18 +146,15 @@ ResultSet ParallelRetriever::execute_node(const QueryNode &node,
         {
             const auto &child = node.children[i];
 
-            // For first child or if result is empty, execute normally
             if (i == 0 || result.doc_ids.empty())
             {
                 result = execute_node(*child, postings_cache, ResultSet{});
             }
-            // For NOT children, pass current result as context
             else if (child->op == QueryOperator::NOT)
             {
                 ResultSet not_result = execute_node(*child, postings_cache, result);
                 result = not_result;
             }
-            // For other children, intersect normally
             else
             {
                 ResultSet child_result = execute_node(*child, postings_cache, ResultSet{});
@@ -176,7 +165,6 @@ ResultSet ParallelRetriever::execute_node(const QueryNode &node,
         return result;
     }
 
-    // Handle OR operator
     if (node.op == QueryOperator::OR)
     {
         std::vector<ResultSet> child_results;
@@ -184,7 +172,6 @@ ResultSet ParallelRetriever::execute_node(const QueryNode &node,
 
         for (const auto &child : node.children)
         {
-            // For NOT in OR context, use universe
             child_results.push_back(execute_node(*child, postings_cache, ResultSet{}));
         }
 
@@ -201,18 +188,15 @@ ResultSet ParallelRetriever::execute_node(const QueryNode &node,
 
 ResultSet ParallelRetriever::get_universe(const std::unordered_map<std::string, ResultSet> &postings_cache)
 {
-    // Create universe by taking union of all cached posting lists
     ResultSet universe;
 
     if (postings_cache.empty())
         return universe;
 
-    // Start with first posting list
     auto it = postings_cache.begin();
     universe = it->second;
     ++it;
 
-    // Union with all other posting lists
     for (; it != postings_cache.end(); ++it)
     {
         universe = union_sets(universe, it->second);

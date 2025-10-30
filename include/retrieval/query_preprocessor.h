@@ -38,4 +38,4 @@ private:
     std::string remove_stop_words(const std::vector<std::string> &tokens) const;
 };
 
-#endif // QUERY_PREPROCESSOR_H
+#endif 

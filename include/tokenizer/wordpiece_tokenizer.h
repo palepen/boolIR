@@ -57,4 +57,4 @@ private:
     std::string clean_text(const std::string &text) const;
 };
 
-#endif // WORDPIECE_TOKENIZER_H
+#endif 

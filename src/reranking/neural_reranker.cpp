@@ -30,7 +30,6 @@ GpuNeuralReranker::GpuNeuralReranker(
     input_ids_gpu_ = torch::zeros({(long)batch_size_, max_seq_len_}, tensor_options);
     attention_mask_gpu_ = torch::zeros({(long)batch_size_, max_seq_len_}, tensor_options);
 
-
     std::cout << "GPU cross-encoder loaded via LibTorch (batch=" << batch_size_
               << ", max_seq_len=" << max_seq_len_ << ")" << std::endl;
 }
@@ -59,7 +58,6 @@ std::vector<ScoredDocument> GpuNeuralReranker::rerank_batch(
         all_input_ids.insert(all_input_ids.end(), input_ids_vec.begin(), input_ids_vec.end());
         all_attention_masks.insert(all_attention_masks.end(), attention_mask_vec.begin(), attention_mask_vec.end());
     }
-
 
     // 1. Create temporary CPU tensors that POINT to the vector data (no copy)
     auto cpu_options = torch::TensorOptions().dtype(torch::kLong);

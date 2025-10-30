@@ -5,8 +5,8 @@
 #include "common/utils.h"
 #include "config.h"
 #include "reranking/neural_reranker.h"
-#include "indexing/indexer.h"  
-#include "indexing/document_stream.h"          
+#include "indexing/indexer.h"
+#include "indexing/document_stream.h"
 #include <iostream>
 #include <string>
 #include <filesystem>
@@ -16,7 +16,6 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
-
 
 namespace fs = std::filesystem;
 
@@ -43,6 +42,7 @@ int main(int argc, char **argv)
     config.label = "default_run";
     config.use_partitioned = false;
     config.num_partitions = num_shards;
+    config.print_log = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -100,19 +100,17 @@ int main(int argc, char **argv)
         std::cout << "\n=== INDEXING SCALABILITY BENCHMARK (STREAMING) ===" << std::endl;
         std::cout << "Running benchmark for " << config.num_cpu_workers << " workers..." << std::endl;
         std::cout << "(Using memory-efficient streaming approach)" << std::endl;
-        
-        // NEW: Use DocumentStream instead of loading all into RAM
+
         DocumentStream doc_stream(Config::CORPUS_DIR);
 
         Indexer indexer(
             doc_stream,
-            Config::INDEX_PATH, 
-            Config::TEMP_PATH, 
-            Config::DEFAULT_BLOCK_SIZE_MB, 
-            num_shards, 
-            config.num_cpu_workers
-        );
-        
+            Config::INDEX_PATH,
+            Config::TEMP_PATH,
+            Config::DEFAULT_BLOCK_SIZE_MB,
+            num_shards,
+            config.num_cpu_workers);
+
         auto start = std::chrono::high_resolution_clock::now();
         indexer.build_index();
         auto end = std::chrono::high_resolution_clock::now();
@@ -139,22 +137,20 @@ int main(int argc, char **argv)
     {
         std::cout << "\n[INDEXING MODE - STREAMING]" << std::endl;
         print_separator('-');
-        
-        // NEW: Use DocumentStream instead of loading all documents
+
         DocumentStream doc_stream(Config::CORPUS_DIR);
-        
+
         std::cout << "\nIndexing " << doc_stream.size() << " documents using streaming approach..." << std::endl;
         std::cout << "Memory usage will remain constant regardless of corpus size." << std::endl;
-        
+
         Indexer indexer(
             doc_stream,
-            Config::INDEX_PATH, 
-            Config::TEMP_PATH, 
-            Config::DEFAULT_BLOCK_SIZE_MB, 
-            num_shards, 
-            config.num_cpu_workers
-        );
-        
+            Config::INDEX_PATH,
+            Config::TEMP_PATH,
+            Config::DEFAULT_BLOCK_SIZE_MB,
+            num_shards,
+            config.num_cpu_workers);
+
         indexer.build_index();
         std::cout << "\nSharded streaming indexing complete (" << num_shards << " shards)." << std::endl;
     }

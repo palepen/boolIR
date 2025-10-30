@@ -11,10 +11,8 @@
  */
 class ResultSet {
 public:
-    // Document IDs matching the boolean query (sorted)
     std::vector<unsigned int> doc_ids;
     
-    // Static helper methods for boolean operations
     static ResultSet intersect_sets(const ResultSet& a, const ResultSet& b);
     static ResultSet union_sets(const ResultSet& a, const ResultSet& b);
     static ResultSet differ_sets(const ResultSet& a, const ResultSet& b);

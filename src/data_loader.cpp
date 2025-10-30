@@ -6,86 +6,6 @@
 #include <cctype>
 #include <algorithm>
 
-DocumentLoadResult load_trec_documents(const std::string &corpus_dir)
-{
-    DocumentLoadResult result;
-    unsigned int id_counter = 0;
-
-    std::cout << "Loading TREC documents from: " << corpus_dir << std::endl;
-
-    if (!fs::exists(corpus_dir) || !fs::is_directory(corpus_dir))
-    {
-        std::cerr << "Error: Corpus directory does not exist: " << corpus_dir << std::endl;
-        return result;
-    }
-
-    // Create preprocessor once for all documents
-    QueryPreprocessor preprocessor;
-    
-    // Iterate through all .txt files in the corpus directory
-    for (const auto &entry : fs::directory_iterator(corpus_dir))
-    {
-        if (entry.is_regular_file() && entry.path().extension() == ".txt")
-        {
-            // Extract document name from filename (without .txt extension)
-            std::string doc_name = entry.path().stem().string();
-
-            // Read the entire file content
-            std::ifstream ifs(entry.path().string());
-            if (!ifs)
-            {
-                std::cerr << "Warning: Could not open " << entry.path().string() << std::endl;
-                continue;
-            }
-
-            // Read all content into a string
-            std::stringstream buffer;
-            buffer << ifs.rdbuf();
-            std::string content = buffer.str();
-            ifs.close();
-
-            // Skip empty documents
-            if (content.empty())
-            {
-                continue;
-            }
-
-            // Apply consistent preprocessing (lowercase, remove punctuation, remove stop words)
-            content = preprocessor.preprocess(content);
-            
-            // Trim whitespace
-            content.erase(0, content.find_first_not_of(" \t\n\r\f\v"));
-            content.erase(content.find_last_not_of(" \t\n\r\f\v") + 1);
-
-            // Skip if preprocessing resulted in empty content
-            if (content.empty())
-            {
-                continue;
-            }
-
-            // Create document with internal ID
-            result.documents.push_back(Document{id_counter, content});
-
-            // Store both mappings
-            result.doc_name_to_id[doc_name] = id_counter;
-            result.id_to_doc_name[id_counter] = doc_name;
-
-            id_counter++;
-
-            // Progress indicator every 10,000 documents
-            if (id_counter % 10000 == 0)
-            {
-                std::cout << "  Loaded " << id_counter << " documents..." << std::endl;
-            }
-        }
-    }
-
-    std::cout << "Loaded " << result.documents.size() << " documents" << std::endl;
-    std::cout << "  Forward mapping size: " << result.doc_name_to_id.size() << std::endl;
-    std::cout << "  Reverse mapping size: " << result.id_to_doc_name.size() << std::endl;
-
-    return result;
-}
 
 Qrels load_trec_qrels(const std::string &qrels_path, const DocNameToIdMap &doc_name_to_id)
 {
@@ -182,12 +102,13 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
                 }
                 else
                 {
-                    std::cerr << "Warning: Query " << current_id 
+                    std::cerr << "Warning: Query " << current_id
                               << " became empty after preprocessing" << std::endl;
                     // Fallback to basic lowercase if preprocessing removes everything
                     std::string fallback = current_title;
                     std::transform(fallback.begin(), fallback.end(), fallback.begin(),
-                                   [](unsigned char c) { return std::tolower(c); });
+                                   [](unsigned char c)
+                                   { return std::tolower(c); });
                     topics[current_id] = fallback;
                 }
             }
@@ -209,7 +130,6 @@ std::unordered_map<std::string, std::string> load_trec_topics(const std::string 
                     num_content = num_content.substr(colon_pos + 1);
                 }
 
-                // Remove closing tag if present
                 size_t close_tag = num_content.find("</num>");
                 if (close_tag != std::string::npos)
                 {

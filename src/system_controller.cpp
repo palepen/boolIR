@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <stdexcept>
 #include <sstream>
-#include <unordered_set>
 #include <filesystem>
 
 namespace fs = std::filesystem;

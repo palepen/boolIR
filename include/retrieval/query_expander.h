@@ -14,54 +14,42 @@
  */
 class QueryExpander {
 public:
-    /**
-     * Constructs the QueryExpander and loads synonyms from a specified file.
-     * @param synonym_file_path Path to the synonym file.
-     */
     explicit QueryExpander(const std::string& synonym_file_path);
 
-    /**
-     * Expands a query string into a structured QueryNode tree.
-     * @param query_str The raw query string from the user.
-     * A unique_ptr to the root of the generated boolean query tree.
-     */
     std::unique_ptr<QueryNode> expand_query(const std::string& query_str);
 
 private:
     /**
      * Loads and parses the synonym file.
-     * @param synonym_file_path Path to the synonym file.
      */
     void load_synonyms(const std::string& synonym_file_path);
 
     // The in-memory map to store the loaded synonyms.
     std::unordered_map<std::string, std::vector<std::string>> synonym_map_;
 
-    // --- Parser Internals ---
     std::vector<std::string> tokens_;
     size_t current_token_index_;
 
     /**
-     * @brief Creates an OR-node for a term and all its synonyms.
+     * Creates an OR-node for a term and all its synonyms.
      */
     std::unique_ptr<QueryNode> create_synonym_node(const std::string& term);
 
     /**
-     * @brief Parses an expression (handles OR, lowest precedence).
+     * Parses an expression (handles OR, lowest precedence).
      */
     std::unique_ptr<QueryNode> parse_expression();
 
     /**
-     * @brief Parses a term (handles AND / implicit AND, middle precedence).
+     * Parses a term (handles AND / implicit AND, middle precedence).
      */
     std::unique_ptr<QueryNode> parse_term();
 
     /**
-     * @brief Parses a factor (handles NOT, parentheses, and TERM, highest precedence).
+     * Parses a factor (handles NOT, parentheses, and TERM, highest precedence).
      */
     std::unique_ptr<QueryNode> parse_factor();
 
-    // --- Parser Utility Methods ---
     bool is_at_end() const;
     std::string peek() const;
     std::string consume();

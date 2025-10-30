@@ -37,4 +37,4 @@ private:
     ResultSet differ_sets(const ResultSet &a, const ResultSet &b);
 };
 
-#endif // _RETRIEVER_H
+#endif 

@@ -137,9 +137,6 @@ dataset:
 	@echo "Running Dataset Fetching Script"
 	python3 scripts/download_dataset.py
 
-plot: $(QUERY_CSV_FILE) $(INDEXING_CSV_FILE)
-	python3 scripts/evaluation_metrics.py --results $(QUERY_CSV_FILE) --output-dir $(RESULTS_DIR)
-
 # --- Object File Compilation Rules ---
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@echo "[CXX] Compiling $<"
