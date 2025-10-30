@@ -56,7 +56,7 @@ void BenchmarkSuite::run_integrated_benchmark(const BenchmarkConfig &config)
     {
         const auto &[qid, qtext] = queries[i];
         auto start_q = std::chrono::high_resolution_clock::now();
-        auto candidates = system.search_boolean(qtext);
+        auto candidates = system.search_boolean(qtext, config.print_log);
         auto end_q = std::chrono::high_resolution_clock::now();
 
         boolean_results_vec[i] = {qid, candidates};
@@ -124,7 +124,7 @@ void BenchmarkSuite::run_integrated_benchmark(const BenchmarkConfig &config)
     // --- Process and Log Rerank Results ---
     BenchmarkResults rerank_results;
     rerank_results.config = config;
-    rerank_results.config.label += "_Rerank"; // Append suffix
+    rerank_results.config.label += "_Rerank"; 
     rerank_results.query_metrics = query_metrics;
     // End-to-end time is boolean time + reranking time
     rerank_results.query_processing_time_ms = bool_results.query_processing_time_ms + std::chrono::duration<double, std::milli>(end_rerank_phase - start_rerank_phase).count();

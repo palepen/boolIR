@@ -23,13 +23,13 @@ namespace Config
     const std::string TEMP_PATH = "index/temp";
     const std::string RESULTS_CSV_PATH = "results/all_benchmarks.csv";
     const std::string PLOTS_DIR = "results/plots";
-
+    const std::string INDEXING_CSV_PATH = "results/indexing.csv";
     // --- Indexing Parameters ---
     constexpr size_t DEFAULT_NUM_SHARDS = 64;
-    constexpr size_t DEFAULT_BLOCK_SIZE_MB = 256;
+    constexpr size_t DEFAULT_BLOCK_SIZE_MB = 128;
 
     // --- Reranking Hyperparameters ---
-    constexpr size_t MAX_RERANK_CANDIDATES = 4096;
+    constexpr size_t MAX_RERANK_CANDIDATES = 2048;
     constexpr int64_t MAX_SEQ_LEN = 512;
     constexpr size_t DOCUMENT_TRUNCATE_WORDS = 256;
     constexpr size_t DEFAULT_RERANK_BATCH_SIZE = 128;

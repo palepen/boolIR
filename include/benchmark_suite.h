@@ -7,9 +7,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
-#include <queue>
-#include <mutex>
-#include <future>
+
 
 class HighPerformanceIRSystem;
 
@@ -19,6 +17,7 @@ struct BenchmarkConfig
     bool use_partitioned;
     size_t num_partitions;
     std::string label;
+    bool print_log;
 };
 
 struct QueryMetrics

@@ -27,16 +27,20 @@ std::unique_ptr<QueryNode> HighPerformanceIRSystem::expand_query(const std::stri
 }
 
 std::vector<SearchResult> HighPerformanceIRSystem::search_boolean(
-    const std::string &query_str)
+    const std::string &query_str, bool print_log)
 {
     std::unique_ptr<QueryNode> query_tree = expand_query(query_str);
 
-    std::cout << "\n--- Processed Query Tree ---" << std::endl;
-    std::cout << query_str << std::endl;
-    std::stringstream ss;
-    query_tree->to_string(ss, 0);
-    std::cout << ss.str();
-    std::cout << "----------------------------" << std::endl;
+    if (print_log) {
+
+        std::cout << "\n--- Processed Query Tree ---" << std::endl;
+        std::cout << query_str << std::endl;
+        std::stringstream ss;
+        query_tree->to_string(ss, 0);
+        std::cout << ss.str();
+        std::cout << "----------------------------" << std::endl;
+    }
+    
     ResultSet candidates_result = retriever_->execute_query(*query_tree);
 
     std::vector<SearchResult> pure_boolean_results;

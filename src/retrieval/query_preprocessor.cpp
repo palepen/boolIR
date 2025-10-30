@@ -10,8 +10,6 @@ QueryPreprocessor::QueryPreprocessor() {
 }
 
 void QueryPreprocessor::initialize_default_stop_words() {
-    // Common English stop words
-    // MODIFIED: "and" has been REMOVED from this list to allow boolean parsing
     std::vector<std::string> default_stops = {
         "a", "an", "are", "as", "at", "be", "by", "for", "from",
         "has", "he", "in", "is", "it", "its", "of", "on", "that", "the",
@@ -23,9 +21,6 @@ void QueryPreprocessor::initialize_default_stop_words() {
     for (const auto& word : default_stops) {
         stop_words_.insert(word);
     }
-    
-    std::cout << "Query preprocessor initialized with " << stop_words_.size() 
-              << " stop words" << std::endl;
 }
 
 void QueryPreprocessor::load_stop_words(const std::string& filepath) {
@@ -49,8 +44,7 @@ void QueryPreprocessor::load_stop_words(const std::string& filepath) {
         }
     }
     
-    std::cout << "Loaded " << stop_words_.size() << " custom stop words from " 
-              << filepath << std::endl;
+    std::cout << "Loaded " << stop_words_.size() << " custom stop words from " << filepath << std::endl;
 }
 
 std::string QueryPreprocessor::to_lowercase(const std::string& text) const {

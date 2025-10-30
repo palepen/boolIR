@@ -20,7 +20,7 @@ public:
     );
 
     std::vector<SearchResult> search_boolean(
-        const std::string &query_str);
+        const std::string &query_str, bool print_log);
 
 private:
     std::unique_ptr<QueryNode> expand_query(const std::string &query_str);

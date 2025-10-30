@@ -1,7 +1,6 @@
 OPENCILK_PATH := /opt/opencilk/
 LIBTORCH_PATH := /opt/libtorch
 CUDA_INCLUDE_PATH := /usr/local/cuda-13/include
-
 CUDA_LIB_PATH := /usr/local/cuda-13.0/targets/x86_64-linux/lib
 
 CXX = $(OPENCILK_PATH)/bin/clang++
@@ -12,18 +11,17 @@ CXXFLAGS = -std=c++17 -fopencilk -O3 -pthread \
            -I$(LIBTORCH_PATH)/include \
            -I$(LIBTORCH_PATH)/include/torch/csrc/api/include \
            -I$(CUDA_INCLUDE_PATH) \
-		   -MMD -MP
+           -MMD -MP
 
 LDFLAGS = -L$(OPENCILK_PATH)/lib \
           -L$(LIBTORCH_PATH)/lib \
           -L$(CUDA_LIB_PATH) \
-      	  -no-pie \
+          -no-pie \
           -Wl,-rpath,$(OPENCILK_PATH)/lib \
           -Wl,-rpath,$(LIBTORCH_PATH)/lib \
           -Wl,-rpath,$(CUDA_LIB_PATH) \
           -Wl,--no-as-needed -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -Wl,--as-needed \
           -lcudart
-
 
 # --- Directories ---
 SRC_DIR = src
@@ -35,22 +33,29 @@ INDEX_DIR = index
 # --- Target Executable ---
 TARGET = $(BIN_DIR)/full_system_benchmark
 
+# --- Log/Result Files ---
+LOG_FILE = $(RESULTS_DIR)/full_benchmark_output.log
+QUERY_CSV_FILE = $(RESULTS_DIR)/all_benchmarks.csv
+INDEXING_CSV_FILE = $(RESULTS_DIR)/indexing_benchmarks.csv
+
 # --- Source Files ---
 CORE_SRCS = $(SRC_DIR)/main.cpp \
-         	$(SRC_DIR)/system_controller.cpp \
+            $(SRC_DIR)/system_controller.cpp \
             $(SRC_DIR)/benchmark_suite.cpp \
             $(SRC_DIR)/data_loader.cpp \
             $(SRC_DIR)/document_store.cpp
 
-COMMON_SRCS = $(SRC_DIR)/common/utils.cpp 
+COMMON_SRCS = $(SRC_DIR)/common/utils.cpp \
+              $(SRC_DIR)/common/progress_bar.cpp 
 
-INDEX_SRCS = $(SRC_DIR)/indexing/bsbi_indexer.cpp \
+INDEX_SRCS = $(SRC_DIR)/indexing/indexer.cpp \
+             $(SRC_DIR)/indexing/document_stream.cpp \
              $(SRC_DIR)/indexing/posting_list.cpp \
              $(SRC_DIR)/indexing/performance_monitor.cpp
 
 RETRIEVAL_SRCS = $(SRC_DIR)/retrieval/retrieval_set.cpp \
                  $(SRC_DIR)/retrieval/retriever.cpp \
-       			 $(SRC_DIR)/retrieval/query_expander.cpp \
+                 $(SRC_DIR)/retrieval/query_expander.cpp \
                  $(SRC_DIR)/retrieval/query_preprocessor.cpp
 
 RERANK_SRCS = $(SRC_DIR)/reranking/neural_reranker.cpp
@@ -60,14 +65,17 @@ EVAL_SRCS = $(SRC_DIR)/evaluation/evaluator.cpp
 ALL_SRCS = $(CORE_SRCS) $(COMMON_SRCS) $(INDEX_SRCS) $(RETRIEVAL_SRCS) $(RERANK_SRCS) $(TOKEN_SRCS) $(EVAL_SRCS) 
 ALL_OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 
+# Dependency files
 DEPS = $(ALL_OBJS:.o=.d)
 
-.PHONY: all clean model dirs index run benchmark benchmark-indexing plot
+.PHONY: all clean model dirs index run \
+        benchmark benchmark-query-workers benchmark-indexing-workers all-benchmarks \
+        plot dataset
 
 all: dirs $(TARGET)
 
 dirs:
-	@mkdir -p $(OBJ_DIR)/indexing $(OBJ_DIR)/retrieval $(OBJ_DIR)/reranking $(OBJ_DIR)/tokenizer $(OBJ_DIR)/evaluation $(OBJ_DIR)/common # <-- ADDED $(OBJ_DIR)/common
+	@mkdir -p $(OBJ_DIR)/indexing $(OBJ_DIR)/retrieval $(OBJ_DIR)/reranking $(OBJ_DIR)/tokenizer $(OBJ_DIR)/evaluation $(OBJ_DIR)/common
 	@mkdir -p $(BIN_DIR) $(RESULTS_DIR) $(INDEX_DIR)
 
 model:
@@ -75,7 +83,8 @@ model:
 	@python3 scripts/export_model.py
 
 index: $(TARGET)
-	@echo "Building sharded on-disk index (64 shards)..."
+	@echo "Building sharded on-disk index with streaming approach (64 shards, 12 workers)..."
+	@echo "Memory-efficient: can handle corpora larger than RAM"
 	CILK_NWORKERS=6 ./$(TARGET) --build-index --shards 64
 
 $(TARGET): $(ALL_OBJS)
@@ -84,34 +93,52 @@ $(TARGET): $(ALL_OBJS)
 	@echo "Build complete: $@"
 
 # --- Main Benchmark & Run Targets ---
+
 benchmark-indexing: $(TARGET)
-	@echo "Running indexing scalability benchmark..."
-	CILK_NWORKERS=6 ./$(TARGET) --benchmark-indexing
+	@echo "Running streaming indexing scalability benchmark (C++ internal loop 1-12 workers)..." | tee -a $(LOG_FILE)
+	CILK_NWORKERS=12 ./$(TARGET) --benchmark-indexing | tee -a $(LOG_FILE)
 
-# --- Main Benchmark & Run Targets (Simplified) ---
-benchmark-workers: $(TARGET)
-	@echo "Running integrated query performance benchmarks..."
+benchmark-query-workers: $(TARGET)
+	@echo "Running integrated QUERY performance benchmarks (looping Cilk workers)..." | tee -a $(LOG_FILE)
+	@echo "Clearing previous query results: $(QUERY_CSV_FILE)"
+	@rm -f $(QUERY_CSV_FILE)
 	@for workers in $(CPU_WORKER_COUNTS); do \
-		echo "\n[BENCHMARK] Running with $${workers} CPU workers..." | tee -a $(LOG_FILE); \
-		CILK_NWORKERS=$${workers} ./$(TARGET) --benchmark --label "Sharded_$${workers}-cpu" --cpu-workers $${workers} | tee -a $(LOG_FILE); \
+		echo "\n[QUERY BENCHMARK] Running with $${workers} Cilk workers..." | tee -a $(LOG_FILE); \
+		CILK_NWORKERS=$${workers} ./$(TARGET) --benchmark --label "Query_$${workers}-cilk-cpu" --cpu-workers $${workers} | tee -a $(LOG_FILE); \
 	done
-	@echo "\nAll benchmarks completed. Consolidated results in $(CSV_FILE)"
+	@echo "\nAll query benchmarks completed. Consolidated results in $(QUERY_CSV_FILE)"
 
+benchmark-indexing-workers: $(TARGET)
+	@echo "Running streaming INDEXING performance benchmarks (looping Cilk workers)..." | tee -a $(LOG_FILE)
+	@echo "Using memory-efficient streaming approach"
+	@echo "Clearing previous indexing results: $(INDEXING_CSV_FILE)"
+	@rm -f $(INDEXING_CSV_FILE)
+	@for workers in $(CPU_WORKER_COUNTS); do \
+		echo "\n[INDEXING BENCHMARK] Running with $${workers} Cilk workers..." | tee -a $(LOG_FILE); \
+		CILK_NWORKERS=$${workers} ./$(TARGET) --benchmark-indexing | tee -a $(LOG_FILE); \
+	done
+	@echo "\nAll indexing benchmarks completed. Consolidated results in $(INDEXING_CSV_FILE)"
+
+all-benchmarks: benchmark-indexing-workers benchmark-query-workers
+	@echo "All benchmark suites complete." | tee -a $(LOG_FILE)
 
 benchmark: $(TARGET)
 	CILK_NWORKERS=6 ./$(TARGET) --benchmark --label "worker-6-cpu" --cpu-workers 6 | tee -a $(LOG_FILE); 
 	
-
 run: $(TARGET)
 	@echo "Running interactive mode..."
 	@./$(TARGET) --interactive
+
+run-log: $(TARGET)
+	@echo "Running interactive mode with query logging..."
+	@./$(TARGET) --interactive --log-query
 
 dataset:
 	@echo "Running Dataset Fetching Script"
 	python3 scripts/download_dataset.py
 
-plot: $(RESULTS_DIR)/all_benchmarks.csv
-	python3 scripts/evaluation_metrics.py --results $(RESULTS_DIR)/all_benchmarks.csv
+plot: $(QUERY_CSV_FILE) $(INDEXING_CSV_FILE)
+	python3 scripts/evaluation_metrics.py --results $(QUERY_CSV_FILE) --output-dir $(RESULTS_DIR)
 
 # --- Object File Compilation Rules ---
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
