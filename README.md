@@ -1,4 +1,4 @@
-# High-Performance Information Retrieval System
+# Boolean Information Retrieval System
 
 [![C++17](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
 [![OpenCilk](https://img.shields.io/badge/Parallel-OpenCilk-green.svg)](https://www.opencilk.org/)
@@ -1020,7 +1020,6 @@ Training Process:
   3. 3-5 epochs with learning rate 2e-5
   4. Validation on held-out queries
 
-Expected Improvement: +5-10% MAP
 ```
 
 #### Strategy B: Contrastive Learning
@@ -1466,11 +1465,5 @@ class DocumentCache {
     // Benefits reranking (frequently rerank same docs for different queries)
 };
 ```
-
-**Expected Speedup**:
-
-- Query cache: 1000x for exact matches
-- Posting cache: 10-100x for popular terms
-- Document cache: 5-10x for reranking
 
 ---
