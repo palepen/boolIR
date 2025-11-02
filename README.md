@@ -609,8 +609,8 @@ pip3 install pandas matplotlib seaborn numpy ir_datasets
 
 ```bash
 # Clone repository
-git clone https://github.com/your-repo/ir-system.git
-cd ir-system
+git clone git@github.com:palepen/boolIR.git
+cd boolIR
 
 # Build
 make clean
@@ -623,7 +623,6 @@ make all
 ### Dataset Download
 
 ```bash
-# Download TREC-COVID dataset (171K documents, ~500 MB)
 make dataset
 
 # This will create:
@@ -722,7 +721,7 @@ Phase 4: Creating document store...
 # Start interactive search
 make run
 
-# Or with query logging
+# Or with query tree expansion
 make run-log
 ```
 
@@ -837,25 +836,11 @@ constexpr size_t DEFAULT_NUM_SHARDS = 64;
 constexpr size_t DEFAULT_BLOCK_SIZE_MB = 128;
 ```
 
-**Memory Impact**:
-
-```
-Total Peak Memory = num_workers × DEFAULT_BLOCK_SIZE_MB + overhead
-
-Examples:
-- 12 workers × 128 MB = 1.5 GB + overhead = ~1.7 GB
-- 12 workers × 256 MB = 3.0 GB + overhead = ~3.2 GB
-- 12 workers × 512 MB = 6.0 GB + overhead = ~6.5 GB
-```
 
 **Tuning Guide**:
 
 - **Smaller blocks (64-128 MB)**: Lower memory, more run files, slower merge
 - **Larger blocks (256-512 MB)**: Higher memory, fewer run files, faster merge
-- **Recommendation**:
-  - Low RAM systems (< 8 GB): 64-128 MB
-  - Normal systems (8-16 GB): 256 MB
-  - High RAM systems (32+ GB): 512 MB
 
 #### Reranking Parameters
 
@@ -902,10 +887,6 @@ constexpr size_t BATCH_SIZE = 128;
 ```
 Memory ≈ batch_size × MAX_SEQ_LEN × model_hidden_size × bytes_per_param
 
-For BERT-base (768 hidden):
-- Batch 64:  ~1.5 GB GPU memory
-- Batch 128: ~3.0 GB GPU memory
-- Batch 256: ~6.0 GB GPU memory
 ```
 
 **Tuning Guide**:
