@@ -1075,134 +1075,10 @@ BM25 + Proximity:
     Doc B: "covid" and "vaccine" 50 words apart → boost = 0.02
 ```
 
-#### Implementation Considerations
 
-**Index Size**:
 
-- Current: ~30% of corpus size
-- With positions: ~50-60% of corpus size (2x increase)
 
-**Query Speed**:
-
-- Phrase queries: Slightly slower (position checking)
-- Proximity scoring: Same speed (positions loaded anyway)
-
-**Memory**:
-
-- Same streaming architecture applies
-- Positions stored in posting lists (still on disk)
-
-### 3. Learned Sparse Retrieval
-
-**Motivation**: Bridge gap between traditional IR and neural methods
-
-#### SPLADE Architecture
-
-```
-Input: Document text
-  ↓
-BERT Encoder
-  ↓
-Token Importance Prediction (per token)
-  ↓
-Sparse Vector (vocabulary-sized, mostly zeros)
-  ↓
-Index like traditional terms
-```
-
-**Benefit**:
-
-- Neural ranking quality
-- Traditional index efficiency
-- Interpretable (shows important tokens)
-
-**Integration**:
-
-```cpp
-// Offline: Generate sparse representations
-for each document:
-    sparse_vec = SPLADE(document)
-    for token, weight in sparse_vec:
-        if weight > threshold:
-            add_to_index(token, doc_id, weight)
-
-// Online: Query expansion via SPLADE
-query_vec = SPLADE(query)
-expanded_terms = top_k_tokens(query_vec)
-// Use expanded terms in Boolean retrieval
-```
-
-### 4. Multi-Vector Representations (ColBERT)
-
-**Current Bottleneck**: Reranking is sequential (one query-doc pair at a time)
-
-**ColBERT Solution**:
-
-- Pre-compute document embeddings offline
-- At query time: only encode query (fast)
-- Score = MaxSim between query and document embeddings
-
-```
-Indexing Phase:
-  for each document:
-      doc_embeddings = ColBERT_doc(document)  // [N_tokens × 128]
-      store doc_embeddings in index
-
-Query Phase:
-  query_embeddings = ColBERT_query(query)  // [M_tokens × 128]
-
-  for each candidate:
-      score = MaxSim(query_embeddings, doc_embeddings)
-      // For each query token, find max similarity to doc tokens
-
-  sort by score
-```
-
-**Speedup**: ~10-100x faster than cross-encoder reranking
-
-**Trade-off**: Slightly lower quality than cross-encoder (~2-3% MAP drop)
-
-### 5. Approximate Nearest Neighbor (ANN) Search
-
-**Use Case**: Fast retrieval for dense vector representations (SPLADE, ColBERT)
-
-#### HNSW (Hierarchical Navigable Small World)
-
-```
-Index Structure:
-  Layer 2:  o────o────o  (few nodes, long edges)
-            │    │    │
-  Layer 1:  o─o──o─o──o─o  (more nodes, medium edges)
-            │││  │││  │││
-  Layer 0:  o─o─o─o─o─o─o─o  (all nodes, short edges)
-
-Search:
-  1. Start at top layer
-  2. Greedy traverse to nearest neighbor
-  3. Drop to next layer
-  4. Repeat until bottom layer
-  5. Return K nearest neighbors
-
-Time Complexity: O(log N) instead of O(N) for exact search
-```
-
-**Integration**:
-
-```cpp
-class ANNIndex {
-    HNSWIndex hnsw_;
-
-    void add_document(unsigned int doc_id, std::vector<float> embedding) {
-        hnsw_.add(doc_id, embedding);
-    }
-
-    std::vector<unsigned int> search(std::vector<float> query_embedding, size_t k) {
-        return hnsw_.search(query_embedding, k);
-    }
-};
-```
-
-### 6. Hybrid Retrieval
+### 3. Hybrid Retrieval
 
 **Combine multiple signals**:
 
@@ -1261,7 +1137,7 @@ Example:
   Doc A ranked higher (better aggregate performance)
 ```
 
-### 7. Query Understanding
+### 4. Query Understanding
 
 **Current**: Literal term matching with synonym expansion
 
@@ -1307,53 +1183,8 @@ def expand_query(query: str) -> List[str]:
 # Retrieve using all variations, merge results
 ```
 
-### 8. Incremental Indexing
 
-**Current**: Full rebuild required for new documents
-
-**Enhancement**: Add documents without reindexing
-
-#### Strategy: Delta Index
-
-```
-Main Index (large, static)
-     +
-Delta Index (small, frequently updated)
-     =
-Merged Results at Query Time
-```
-
-**Implementation**:
-
-```cpp
-class IncrementalIndexer {
-    MainIndex main_index_;      // Immutable, on disk
-    DeltaIndex delta_index_;    // In-memory, mutable
-
-    void add_documents(std::vector<Document> new_docs) {
-        delta_index_.add(new_docs);
-
-        // When delta grows too large, merge into main
-        if (delta_index_.size() > THRESHOLD) {
-            merge_delta_into_main();
-        }
-    }
-
-    ResultSet search(Query q) {
-        auto main_results = main_index_.search(q);
-        auto delta_results = delta_index_.search(q);
-        return merge(main_results, delta_results);
-    }
-};
-```
-
-**Merge Strategy**:
-
-- Background thread merges delta into main
-- Atomic swap of main index when complete
-- No downtime for queries
-
-### 9. Distributed Indexing and Retrieval
+### 5. Distributed Indexing and Retrieval
 
 **Motivation**: Scale beyond single machine
 
@@ -1389,14 +1220,8 @@ Load Balancer
 6. Return final top-K
 ```
 
-**Challenges**:
 
-- Network latency
-- Load balancing (hot shards)
-- Consistency during updates
-- Fault tolerance
-
-### 10. Caching Layer
+### 6. Caching Layer
 
 **Query Cache**:
 
