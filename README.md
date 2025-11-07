@@ -186,7 +186,6 @@ Total memory = num_workers × block_size_bytes
 **Parallelization Strategy**: Document-level partitioning
 
 - Each worker processes a disjoint range of document IDs
-- No shared state → embarrassingly parallel
 - Independent run file generation → no synchronization needed
 
 **Memory Management**:
